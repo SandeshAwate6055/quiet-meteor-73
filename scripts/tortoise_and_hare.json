@@ -1,0 +1,40 @@
+{
+  "title": "Tiny Steps, Big Finish",
+  "scenes": [
+    {
+      "id": "challenge",
+      "narration": "Hare zipped around the meadow. Tortoise smiled. Let's race to the old oak tree, she said.",
+      "duration": 8.0,
+      "visual_description": "A sunny meadow: Hare and Tortoise meet at the starting line.",
+      "characters": ["tortoise", "hare"]
+    },
+    {
+      "id": "racing_ahead",
+      "narration": "Off they went! Hare bounced far ahead, while Tortoise took one small, careful step after another.",
+      "duration": 8.0,
+      "visual_description": "Hare races up the winding path while Tortoise follows steadily.",
+      "characters": ["tortoise", "hare"]
+    },
+    {
+      "id": "nap",
+      "narration": "I have plenty of time, thought Hare. He stretched beneath a shady tree and fell asleep.",
+      "duration": 8.0,
+      "visual_description": "Hare naps beneath a leafy tree beside the trail.",
+      "characters": ["hare"]
+    },
+    {
+      "id": "steady_steps",
+      "narration": "Tortoise kept going, past flowers and over a little hill. Every step brought the finish closer.",
+      "duration": 8.0,
+      "visual_description": "Tortoise climbs a flower-covered hill, keeping her eyes on the goal.",
+      "characters": ["tortoise"]
+    },
+    {
+      "id": "finish",
+      "narration": "Hare woke too late! Tortoise reached the oak first. Keep trying, friends. Small steps can achieve big things.",
+      "duration": 8.5,
+      "visual_description": "At the oak tree, the friends celebrate Tortoise's patient effort.",
+      "characters": ["tortoise", "hare"]
+    }
+  ]
+}

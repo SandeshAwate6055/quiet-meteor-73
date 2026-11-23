@@ -1,0 +1,9 @@
+{
+  "fps": 24,
+  "speech_rate": 0,
+  "tail_seconds": 0.35,
+  "threads": 2,
+  "vertical_scene_ids": ["challenge", "steady_steps", "finish"],
+  "ffmpeg": null,
+  "ffprobe": null
+}

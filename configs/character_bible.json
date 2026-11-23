@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "style": "High-quality, friendly 3D children's cartoon; soft rounded shapes, expressive kind faces, soft cinematic lighting, colorful materials, no text or watermarks",
+  "environment": "Colorful sunny forest with lush green trees, bright wildflowers, a winding path and a large old oak tree",
+  "metadata": {"project": "AI Kids Story Studio", "story": "Tiny Steps, Big Finish"},
+  "characters": [
+    {
+      "id": "hare",
+      "name": "Rabbit",
+      "appearance": "Small rabbit with white fur, long upright ears with pink inner ears, a blue vest, large friendly eyes, a small pink nose and a fluffy white tail",
+      "reference_image_paths": ["assets/references/hare.png"],
+      "metadata": {"role": "Fast, overconfident but kind friend", "continuity": "Keep fur white and vest blue in every scene"}
+    },
+    {
+      "id": "tortoise",
+      "name": "Tortoise",
+      "appearance": "Small tortoise with green skin, a rounded brown patterned shell with distinct hexagonal scutes, large friendly eyes and short sturdy legs",
+      "reference_image_paths": ["assets/references/tortoise.png"],
+      "metadata": {"role": "Patient, determined friend", "continuity": "Keep skin green and shell brown in every scene"}
+    }
+  ]
+}

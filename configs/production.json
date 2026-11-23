@@ -1,0 +1,9 @@
+{
+  "target_duration": null,
+  "language": "en-US",
+  "style": null,
+  "formats": ["landscape", "vertical"],
+  "vertical_scene_ids": null,
+  "narration": {"rate": 0, "silent": false},
+  "animation": "zoom_pan"
+}
