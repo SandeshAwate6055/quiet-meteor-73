@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "title": "Tiny Steps, Big Finish",
+  "style": "Friendly high-quality 3D cartoon",
+  "environment": "Colorful sunny forest",
+  "characters": [
+    {
+      "id": "hare",
+      "name": "Rabbit",
+      "appearance": "white fur, pink inner ears, blue vest",
+      "reference_image_paths": [
+        "assets/references/hare.png"
+      ],
+      "metadata": {
+        "role": "Fast, overconfident but kind friend",
+        "continuity": "Keep fur white and vest blue in every scene",
+        "reference_pose": "Single full-body three-quarter view, paws on plain ground, one view only",
+        "reference_spec_revision": "single_view_v2"
+      },
+      "prompt": "Exactly one rabbit with white fur, pink inner ears, blue vest. Single full-body three-quarter view, paws on plain ground, one view only. Friendly high-quality 3D cartoon, neutral background.",
+      "negative_prompt": "multiple views, front and back views, turnaround, character sheet, split panels, collage, extra characters, duplicate animal, pedestal, display stand, text, watermark",
+      "reference_spec_revision": "single_view_v2"
+    },
+    {
+      "id": "tortoise",
+      "name": "Tortoise",
+      "appearance": "green skin, visible rounded brown patterned shell",
+      "reference_image_paths": [
+        "assets/references/tortoise.png"
+      ],
+      "metadata": {
+        "role": "Patient, determined friend",
+        "continuity": "Keep skin green and shell brown in every scene",
+        "reference_pose": "Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground",
+        "reference_spec_revision": "single_view_v2"
+      },
+      "prompt": "Exactly one tortoise with green skin, visible rounded brown patterned shell. Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground. Friendly high-quality 3D cartoon, neutral background.",
+      "negative_prompt": "multiple views, front and back views, turnaround, character sheet, split panels, collage, extra characters, duplicate animal, pedestal, display stand, text, watermark",
+      "reference_spec_revision": "single_view_v2"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "challenge",
+      "characters": [
+        "tortoise",
+        "hare"
+      ],
+      "prompt": "Exactly two animals: one rabbit with white fur, pink inner ears, blue vest on the left; one tortoise with green skin, visible rounded brown patterned shell on the right. Both wait at a colorful sunny forest race starting line across one dirt path. One unified cinematic frame. Friendly high-quality 3D cartoon.",
+      "negative_prompt": "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal"
+    }
+  ],
+  "locked_scene_ids": [],
+  "prompt_revision": "single_scene_v2",
+  "negative_prompt": "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal",
+  "generation_config": {
+    "prompt_revision": "single_scene_v2",
+    "conditioning": "ip_adapter_masked_references_v2"
+  },
+  "generation_policy": {
+    "allowed_scene_ids": [
+      "challenge"
+    ],
+    "full_batch_enabled": false,
+    "require_reference_review": true,
+    "reference_spec_revision": "single_view_v2"
+  },
+  "quality_review": {
+    "previous_smoke": "failed_human_visual_review",
+    "approved": false
+  }
+}

@@ -40,5 +40,6 @@ huggingface/
 *.mp3
 *.zip
 !examples/colab_handoff.zip
+!examples/challenge_smoke_v2.zip
 /20??????T??????Z_*/
 notebooks/*_input.json

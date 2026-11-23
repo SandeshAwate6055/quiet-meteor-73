@@ -5,6 +5,17 @@ from pathlib import Path, PurePosixPath
 
 from .schema import _identifier, _text
 
+PROMPT_REVISION = "single_scene_v2"
+REFERENCE_SPEC_REVISION = "single_view_v2"
+SCENE_NEGATIVE_PROMPT = (
+    "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, "
+    "extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal"
+)
+REFERENCE_NEGATIVE_PROMPT = (
+    "multiple views, front and back views, turnaround, character sheet, split panels, collage, "
+    "extra characters, duplicate animal, pedestal, display stand, text, watermark"
+)
+
 
 @dataclass(frozen=True)
 class Character:
@@ -58,5 +69,20 @@ def scene_prompt(scene, bible: CharacterBible) -> str:
     unknown = set(scene.characters) - set(bible.characters)
     if unknown:
         raise ValueError(f"Characters absent from Bible: {sorted(unknown)}")
-    identities = "; ".join(f"{bible.characters[c].name}: {bible.characters[c].appearance}" for c in scene.characters)
-    return f"{bible.style}. {bible.environment}. {scene.visual_description} Characters: {identities}. Wide story illustration, clear silhouettes, full bodies, no lettering."
+    # Subject identities and action precede style, instead of being lost after a
+    # long style/environment prefix. The backend rejects tokenizer truncation.
+    ordered = sorted(scene.characters)
+    count = {0: "zero", 1: "one", 2: "two"}.get(len(ordered), str(len(ordered)))
+    subjects = []
+    for n, identity in enumerate(ordered):
+        character = bible.characters[identity]
+        side = (" on the left" if n == 0 else " on the right") if len(ordered) == 2 else ""
+        subjects.append(f"one {character.name.lower()} with {character.appearance}{side}")
+    environment = "" if bible.environment.split()[-1].lower() in scene.visual_description.lower() else f"{bible.environment}. "
+    return (f"Exactly {count} animals: {'; '.join(subjects) if subjects else 'empty landscape'}. "
+            f"{scene.visual_description} {environment}One unified cinematic frame. {bible.style}.")
+
+
+def reference_prompt(character: Character, bible: CharacterBible) -> str:
+    pose = character.metadata.get("reference_pose", "single full-body three-quarter view, standing on plain ground")
+    return f"Exactly one {character.name.lower()} with {character.appearance}. {pose}. {bible.style}, neutral background."

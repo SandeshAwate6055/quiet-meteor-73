@@ -12,6 +12,9 @@ def build():
     old = json.loads((root / "notebooks/phase2_image_generation.ipynb").read_text(encoding="utf-8"))
     old_intro = "".join(old["cells"][0]["source"])
     licenses = "Checkpoints and compatibility" + old_intro.split("Checkpoints and compatibility", 1)[1]
+    licenses = licenses.replace(
+        "A combined reference board is a pragmatic starting point, not spatially controlled multi-character conditioning.",
+        "This revision encodes references separately with regional attention masks; independent identity is still not guaranteed.")
     cells = []
 
     def add(kind, source):
@@ -22,7 +25,7 @@ def build():
         cells.append(cell)
 
     add("markdown", '''
-    # AI Kids Story Studio - resumable batch image worker
+    # AI Kids Story Studio - revised challenge smoke (v2)
 
     **Not GPU-executed during implementation.** The orchestration/state/import code is locally tested with synthetic fixtures.
     This launcher uses the SAME worker code shipped by your local production; no separate generation loop lives in the notebook.
@@ -31,13 +34,15 @@ def build():
     Outputs, checkpoints, reference copies and exports live in Drive. Reopen the same package/result directory to resume.
     Default is `dry_run`: no model imports/downloads/inference and no result mutation.
 
-    First run ONE smoke scene. Review its contact sheet, then set `MODE="full"`, `QUALITY_REVIEWED=True`, and increase
-    `MAX_NEW_IMAGES` only enough for the remaining scenes. Full mode iterates every requested scene, not a hard-coded four.
+    Use the NEW `examples/challenge_smoke_v2.zip`. Historical handoffs preserve the failed setup and must not be reused.
+    First generate two NEW single-view references with `MODE="references"`, budget 2. Inspect their colors, pose and shell.
+    Only after reference review run ONE `challenge` scene with `MODE="smoke"`, budget 1. Full batch is disabled in this request.
+    Separate reference embeddings + spatial attention masks replace the collage; this is NOT guaranteed identity/pose control.
     Unapproved references require explicit experimental preview consent; this NEVER approves them or the generated scenes locally.
     ''' + "\n\n" + licenses)
     add("code", '''
     # 1. Controls. Rerun this cell only after deliberately editing these values.
-    MODE = "dry_run"  # dry_run, smoke, full
+    MODE = "dry_run"  # dry_run, references, smoke. Full batch is disabled by the revised request.
     MAX_NEW_IMAGES = 3  # per invocation, successful existing images do not count
     SMOKE_SCENE_ID = "challenge"
     RUN_GENERATION = False
@@ -45,12 +50,13 @@ def build():
     LICENSES_REVIEWED = False
     ALLOW_UNAPPROVED_REFERENCE_PREVIEW = False
     QUALITY_REVIEWED = False  # Human smoke-quality acknowledgement, not production asset approval
+    REFERENCES_REVIEWED = False  # Set True only after reviewing the NEW single-view references
     FAMILY = "sdxl"  # sd15 is the smaller explicit fallback; never silently substituted
     STEPS = 24
     BASE_SEED = 20261123
-    IP_ADAPTER_SCALE = 0.55  # must be >0; character conditioning cannot be disabled
+    IP_ADAPTER_SCALE = 0.35  # lower influence; spatially masked references remain enabled
     PACKAGE_PATH = ""  # Set to the saved Drive ZIP path on subsequent sessions; otherwise upload once
-    RESULT_BATCH_ID = ""  # blank => stable request-hash folder; use a NEW name for changed generation settings
+    RESULT_BATCH_ID = ""  # blank => NEW request/settings/implementation identity; never point at the failed smoke
     REFERENCE_BATCH_MANIFEST = ""  # optional existing Drive manifest (including the legacy two-reference batch)
     REFERENCE_IDS = {}  # only needed for ambiguous refs: {"hare": "exact candidate ID or sha256"}
     ''')
@@ -102,11 +108,15 @@ def build():
     if previous_module and not Path(previous_module.__file__).resolve().is_relative_to(bundle.resolve()):
         raise RuntimeError("A different bundle is already imported. Restart the session before loading new code.")
     sys.path.insert(0, str(bundle))
-    from src.image_batch import BatchWorker, BatchSettings, reference_sources, contact_sheet
+    request_data = json.loads((bundle / "request.json").read_text())
+    if request_data.get("prompt_revision") != "single_scene_v2" or request_data.get("generation_config", {}).get("conditioning") != "ip_adapter_masked_references_v2":
+        raise RuntimeError("Historical handoff is incompatible. Upload the NEW challenge_smoke_v2.zip; preserve the failed batch.")
+    from src.image_batch import BatchWorker, BatchSettings, reference_sources, contact_sheet, generation_identity
     request_hash = hashlib.sha256((bundle / "request.json").read_bytes()).hexdigest()
     if request_hash != index["request_sha256"]:
         raise ValueError("Production request hash mismatch")
-    result_name = RESULT_BATCH_ID or ("request_" + request_hash[:16])
+    generation_key = generation_identity(request_hash, BatchSettings(family=FAMILY, steps=STEPS, base_seed=BASE_SEED, adapter_scale=IP_ADAPTER_SCALE))
+    result_name = RESULT_BATCH_ID or ("scene_v2_" + generation_key[:16])
     if not result_name.replace("_", "").replace("-", "").isalnum():
         raise ValueError("Use a simple alphanumeric result batch name")
     result_dir = SHARED / "results" / result_name
@@ -123,12 +133,13 @@ def build():
     controls = dict(mode=MODE, smoke_scene=SMOKE_SCENE_ID, max_new_images=MAX_NEW_IMAGES,
         allow_unapproved_references=ALLOW_UNAPPROVED_REFERENCE_PREVIEW,
         quality_reviewed=QUALITY_REVIEWED, reference_ids=REFERENCE_IDS)
+    controls["references_reviewed"] = REFERENCES_REVIEWED
     preflight = worker.preflight(**controls)
     print(json.dumps({k: v for k, v in preflight.items() if k != "chosen_references"}, indent=2))
     print("Review count, reused images, warnings and blockers ABOVE before enabling GPU execution.")
     ''')
     add("code", '''
-    # 4. Explicit execution. All initialization/adapter/generation errors are persisted by the worker.
+    # 4. Explicit execution: references first, then ONE challenge after human reference review.
     if MODE == "dry_run":
         outcome = worker.execute(lambda *args: (_ for _ in ()).throw(RuntimeError("Dry-run must not load a model")), **controls)
         print("DRY RUN ONLY:", json.dumps(outcome, indent=2))
@@ -176,16 +187,19 @@ def build():
         print("Dry run has no result images; no contact sheet generated.")
     ''')
     add("markdown", '''
-    After the smoke scene: inspect it and the reference colors/identity. If unacceptable, STOP and export the partial batch.
-    Do not use full mode to try to repair a bad smoke. A changed prompt/model/seed needs a fresh result batch.
-    If acceptable, edit cell 1 to `MODE="full"`, `QUALITY_REVIEWED=True`, and set `MAX_NEW_IMAGES` to the
-    preflight's remaining count (normally 4 with the existing two refs). Keep the saved `PACKAGE_PATH` and result folder,
-    rerun cells 1-4, then review cell 5. Existing successful images and references are checksum-checked and reused.
-    Completion covers ALL scene IDs in the original request; smoke success cannot mark a five-scene batch complete.
+    In `MODE="references"`, verify exactly ONE rabbit view: white fur, pink inner ears, BLUE vest; and exactly ONE tortoise
+    three-quarter side view: green skin and a clearly visible rounded BROWN patterned back shell. No pedestal or lineup.
+    If either fails, STOP. Keep it as a historical candidate; revise the request and use a NEW result batch.
+    If both pass human reference review, keep `PACKAGE_PATH`/result directory, set `MODE="smoke"`, `MAX_NEW_IMAGES=1`,
+    `REFERENCES_REVIEWED=True`, and explicitly opt into `ALLOW_UNAPPROVED_REFERENCE_PREVIEW=True`.
+    Run cells 1-5 once. This produces only `challenge`. Check exactly two distinct animals on one forest starting line,
+    white rabbit/blue vest, green tortoise/brown visible shell, unified frame, no panels, no extra figures or text.
+    Do not set QUALITY_REVIEWED or use full mode. Technical completion is not visual approval.
 
     A CUDA/adapter failure stops the invocation and is recorded without a text-only fallback or automatic costly retry.
     For OOM, export partial results; use a new batch with `FAMILY="sd15"` in a fresh runtime. The smaller model has lower
-    quality and uses its matching SD 1.5 adapter. Identity consistency is not guaranteed for either model.
+    quality and uses its matching SD 1.5 adapter. Masks are regional attention guidance, not independently trained identities
+    or hard segmentation/pose control. Identity consistency is not guaranteed for either model. No ControlNet or extra model is loaded.
     ''')
     add("code", '''
     # 6. Export once per invocation; filenames are unique, all originals remain on Drive.

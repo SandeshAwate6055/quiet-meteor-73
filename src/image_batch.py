@@ -13,9 +13,12 @@ import uuid
 from PIL import Image
 
 from .asset_store import digest, read_image
-from .characters import safe_relative
-from .production_state import file_hash, now, write_json
+from .characters import safe_relative, PROMPT_REVISION
+from .production_state import file_hash, now, write_json, fingerprint
 from .schema import _identifier
+from .image_conditioning import CONDITIONING_REVISION, reference_layout
+
+WORKER_VERSION = 2
 
 
 def inside(root, relative):
@@ -55,6 +58,12 @@ def validate_request(request):
     locked = request.get("locked_scene_ids", [])
     if not isinstance(locked, list) or any(not isinstance(s, str) for s in locked):
         raise ValueError("Invalid locked scene ids")
+    for field in ("generation_policy", "generation_config"):
+        if field in request and not isinstance(request[field], dict):
+            raise ValueError(f"{field} must be an object")
+    allowed = request.get("generation_policy", {}).get("allowed_scene_ids")
+    if allowed is not None and (not isinstance(allowed, list) or set(scenes) - set(allowed)):
+        raise ValueError("Request scenes exceed the explicit smoke-only scope")
     return characters, scenes
 
 
@@ -63,9 +72,13 @@ class BatchSettings:
     family: str = "sdxl"
     base_seed: int = 20261123
     steps: int = 24
-    adapter_scale: float = .55
+    adapter_scale: float = .35
+    conditioning: str = CONDITIONING_REVISION
+    prompt_revision: str = PROMPT_REVISION
 
     def validate(self):
+        if self.conditioning != CONDITIONING_REVISION or self.prompt_revision != PROMPT_REVISION:
+            raise ValueError("Use the current explicit prompting/conditioning revision in a NEW result batch")
         if self.family not in ("sdxl", "sd15"):
             raise ValueError("Choose sdxl or the documented smaller sd15 fallback explicitly")
         if isinstance(self.base_seed, bool) or not isinstance(self.base_seed, int) or not 0 <= self.base_seed < 2**32:
@@ -77,6 +90,13 @@ class BatchSettings:
 
     def size(self, kind):
         return ((768, 768) if kind == "character" else (1024, 576)) if self.family == "sdxl" else ((512, 512) if kind == "character" else (768, 432))
+
+
+def generation_identity(request_hash, settings):
+    """Request, settings and generation implementation all bind cache identity."""
+    implementation = {name: file_hash(Path(__file__).with_name(name)) for name in
+                      ("image_batch.py", "colab_images.py", "image_conditioning.py", "characters.py")}
+    return fingerprint({"request_sha256": request_hash, "settings": asdict(settings), "implementation": implementation})
 
 
 def reference_sources(manifest_path):
@@ -111,21 +131,27 @@ class BatchWorker:
         self.request_hash = digest(self.request_bytes)
         self.settings = settings or BatchSettings()
         self.settings.validate()
+        requested_config = self.request.get("generation_config", {})
+        if any(requested_config.get(key, getattr(self.settings, key)) != getattr(self.settings, key)
+               for key in ("conditioning", "prompt_revision")):
+            raise ValueError("Request prompting/conditioning configuration is incompatible with this worker; prepare a NEW request/batch")
+        self.generation_identity = generation_identity(self.request_hash, self.settings)
         self.references = list(references or [])
         self.manifest_path = self.root / "manifest.json"
         self.data = json.loads(self.manifest_path.read_text(encoding="utf-8")) if self.manifest_path.exists() else {
-            "version": 1, "worker_version": 1, "batch_id": self.root.name, "status": "prepared", "assets": [],
+            "version": 1, "worker_version": WORKER_VERSION, "batch_id": self.root.name, "status": "prepared", "assets": [],
             "jobs": {}, "errors": [], "runs": [], "created_at": now(), "request_sha256": self.request_hash,
-            "settings": asdict(self.settings), "requested_scene_ids": list(self.scenes)}
-        if self.data.get("worker_version") != 1 or self.data["request_sha256"] != self.request_hash or self.data["settings"] != asdict(self.settings):
-            raise ValueError("Resume request/settings differ. Use a NEW result directory; existing images will not be overwritten.")
+            "settings": asdict(self.settings), "generation_identity": self.generation_identity,
+            "requested_scene_ids": list(self.scenes)}
+        if self.data.get("worker_version") != WORKER_VERSION or self.data.get("generation_identity") != self.generation_identity:
+            raise ValueError("Resume request/settings differ or generation implementation changed. Use a NEW result directory; existing images will not be overwritten.")
         for identity in self.scenes:
             self.data["jobs"].setdefault(f"scene:{identity}", {"status": "pending", "seed": scene_seed(identity, self.settings.base_seed)})
 
     def refresh(self):
         if self.manifest_path.exists():
             latest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-            if latest.get("worker_version") != 1 or latest.get("request_sha256") != self.request_hash or latest.get("settings") != asdict(self.settings):
+            if latest.get("worker_version") != WORKER_VERSION or latest.get("generation_identity") != self.generation_identity:
                 raise ValueError("Persistent batch request/settings changed; choose a NEW result directory")
             self.data = latest
             for identity in self.scenes:
@@ -161,7 +187,7 @@ class BatchWorker:
                     if min(image.size) < 64 or image.width * image.height > 16_000_000:
                         raise ValueError("Invalid embedded reference dimensions")
                 sources.append({"target_id": identity, "sha256": digest(payload), "payload": payload,
-                    "asset_id": character["approved_asset_id"], "metadata": {"origin": "current approved request"}})
+                    "asset_id": character["approved_asset_id"], "metadata": character.get("approved_reference_metadata", {"origin": "current approved request"})})
             previous = self._asset("character", identity)
             if previous:
                 sources.append({**previous, "source_path": str(inside(self.root, previous["file"]))})
@@ -171,23 +197,36 @@ class BatchWorker:
         return sources
 
     def preflight(self, *, mode="dry_run", smoke_scene=None, max_new_images=3,
-                  allow_unapproved_references=False, quality_reviewed=False, reference_ids=None):
+                  allow_unapproved_references=False, quality_reviewed=False, reference_ids=None, references_reviewed=False):
         self.refresh()
-        if mode not in ("dry_run", "smoke", "full"):
-            raise ValueError("Mode must be dry_run, smoke, or full")
-        if not isinstance(allow_unapproved_references, bool) or not isinstance(quality_reviewed, bool):
+        if mode not in ("dry_run", "references", "smoke", "full"):
+            raise ValueError("Mode must be dry_run, references, smoke, or full")
+        if any(not isinstance(value, bool) for value in (allow_unapproved_references, quality_reviewed, references_reviewed)):
             raise ValueError("Preview consent and quality review must be explicit booleans")
         if isinstance(max_new_images, bool) or not isinstance(max_new_images, int) or max_new_images < 0:
             raise ValueError("max_new_images must be a nonnegative integer")
         smoke_scene = smoke_scene or next(iter(self.scenes), None)
         if self.scenes and smoke_scene not in self.scenes:
             raise ValueError("Smoke scene is absent from the request")
-        selected = [smoke_scene] if mode == "smoke" and smoke_scene else list(self.scenes)
+        selected = [] if mode == "references" else [smoke_scene] if mode == "smoke" and smoke_scene else list(self.scenes)
         blockers, warnings, new, reused, chosen = [], [], [], [], {}
+        policy = self.request.get("generation_policy", {})
+        if mode == "full" and policy.get("full_batch_enabled") is False:
+            blockers.append("This request is restricted to the challenge smoke. Full-batch generation is disabled pending human quality review.")
+        if mode == "smoke" and policy.get("require_reference_review") and not references_reviewed:
+            blockers.append("Inspect the NEW single-view references first, then explicitly set REFERENCES_REVIEWED=True")
         locked = set(selected) & set(self.request.get("locked_scene_ids", []))
         if locked:
             blockers.append(f"Scene approvals remain locked: {sorted(locked)}; unlock locally and export a fresh request")
+        for identity in selected:
+            reference_layout(self.scenes[identity]["characters"])  # Validate strategy limits before model loading.
         sources = self._sources()
+        required_spec = policy.get("reference_spec_revision")
+        if required_spec:
+            historical = [r for r in sources if r.get("metadata", {}).get("reference_spec_revision") != required_spec]
+            if historical:
+                warnings.append("Historical reference candidates are preserved but excluded: they do not meet this request's single-view specification revision")
+            sources = [r for r in sources if r not in historical]
         needed = sorted({c for s in self.scenes.values() for c in s["characters"]})
         reference_ids = reference_ids or {}
         for identity in needed:
@@ -210,19 +249,26 @@ class BatchWorker:
                 reused.append({"kind": "character", "id": identity, "sha256": row["sha256"], "approval": row["approval"]})
                 if row["approval"] != "approved":
                     warnings.append(f"EXPERIMENTAL PREVIEW: {identity} is UNAPPROVED; generated scenes will remain candidates")
-                    if not allow_unapproved_references:
+                    if not allow_unapproved_references and mode != "references":
                         blockers.append(f"Unapproved reference {identity} requires explicit preview opt-in; it will not be regenerated automatically")
             elif unique:
                 blockers.append(f"Multiple references for {identity}; choose its exact reference ID/checksum")
             elif not choice:
                 new.append({"kind": "character", "id": identity})
-                if not allow_unapproved_references:
+                if not allow_unapproved_references and mode != "references":
                     blockers.append(f"New reference {identity} would be unapproved; enable experimental preview or supply approved references")
+        for record in self.data["assets"]:
+            if record["kind"] == "scene":
+                for identity, reference in record.get("metadata", {}).get("references", {}).items():
+                    if identity in chosen and chosen[identity]["sha256"] != reference["sha256"]:
+                        blockers.append("Reference binding changed after scene generation. Use a NEW result batch, never reuse incompatible scenes.")
         for identity in selected:
             if self._asset("scene", identity):
                 reused.append({"kind": "scene", "id": identity})
             else:
                 new.append({"kind": "scene", "id": identity})
+        if mode == "smoke" and policy.get("require_reference_review") and any(task["kind"] == "character" for task in new):
+            blockers.append("Generate and review references separately in MODE='references' before the challenge smoke")
         if len(new) > max_new_images:
             blockers.append(f"Planned {len(new)} new images exceeds limit {max_new_images}")
         if mode == "full" and new:
@@ -230,6 +276,7 @@ class BatchWorker:
             if not smoke or not self.data.get("smoke_scene_id") or not quality_reviewed:
                 blockers.append("Run one successful smoke scene first, inspect it, then explicitly set QUALITY_REVIEWED=True")
         return {"request_sha256": self.request_hash, "mode": mode, "requested_scene_ids": list(self.scenes),
+            "generation_identity": self.generation_identity,
             "selected_scene_ids": selected, "smoke_scene_id": smoke_scene, "new_images": new,
             "new_image_count": len(new), "reused_images": reused, "warnings": warnings,
             "blockers": list(dict.fromkeys(blockers)), "chosen_references": chosen}
@@ -287,7 +334,9 @@ class BatchWorker:
                 if previous.get("status") == "running":
                     previous["status"] = "interrupted"
             run = {"mode": plan["mode"], "status": "running", "started_at": now(), "new_image_count": plan["new_image_count"],
-                   "warnings": plan["warnings"], "generated": [], "reused": plan["reused_images"]}
+                   "warnings": plan["warnings"], "generated": [], "reused": plan["reused_images"],
+                   "references_reviewed": controls.get("references_reviewed", False),
+                   "experimental_reference_consent": controls.get("allow_unapproved_references", False)}
             self.data["runs"].append(run)
             self.save()
             for identity, source in plan["chosen_references"].items():
@@ -298,7 +347,9 @@ class BatchWorker:
                 key = f"{kind}:{identity}"
                 job = {"kind": kind, "id": identity, "seed": scene_seed(identity, self.settings.base_seed),
                     "prompt": (self.characters if kind == "character" else self.scenes)[identity]["prompt"],
-                    "negative_prompt": self.request["negative_prompt"], "size": self.settings.size(kind)}
+                    "negative_prompt": (self.characters if kind == "character" else self.scenes)[identity].get("negative_prompt", self.request["negative_prompt"]),
+                    "size": self.settings.size(kind),
+                    "conditioning": self.settings.conditioning if kind == "scene" and self.scenes[identity]["characters"] else "not_applicable" if kind == "scene" else "text_only"}
                 state = {"status": "running", "started_at": now(), "seed": job["seed"],
                          "attempt": self.data["jobs"].get(key, {}).get("attempt", 0) + 1}
                 self.data["jobs"][key] = state
@@ -319,9 +370,11 @@ class BatchWorker:
                             ref_metadata[character] = {"file": asset["file"], "sha256": asset["sha256"],
                                 "approval": plan["chosen_references"].get(character, {}).get("approval", "candidate")}
                     image, metadata = backend.generate(job, refs)
-                    expected_conditioning = "ip_adapter_contact_sheet" if refs else "not_applicable" if kind == "scene" else "text_only"
+                    expected_conditioning = job["conditioning"]
                     if metadata.get("conditioning") != expected_conditioning:
                         raise ValueError("Backend did not apply the required reference conditioning")
+                    if refs and metadata.get("conditioning_layout") != reference_layout(refs):
+                        raise ValueError("Backend reference conditioning layout differs from the requested spatial gates")
                     if image.size != tuple(job["size"]):
                         raise ValueError("Backend returned incorrect image resolution")
                     path = self.root / "images" / f"{kind}_{identity}_{job['seed']}_{uuid.uuid4().hex[:8]}.png"
@@ -333,6 +386,10 @@ class BatchWorker:
                             "negative_prompt": job["negative_prompt"], "seed": job["seed"], "resolution": list(image.size),
                             "runtime_seconds": round(time.perf_counter() - start, 4), "settings": asdict(self.settings),
                             "references": ref_metadata, "experimental_preview": any(r["approval"] != "approved" for r in ref_metadata.values())}}
+                    if kind == "character":
+                        record["metadata"]["reference_spec_revision"] = self.characters[identity].get("reference_spec_revision")
+                    elif refs:
+                        record["metadata"]["conditioning_layout"] = reference_layout(refs)
                     self.data["assets"] = [r for r in self.data["assets"] if (r["kind"], r["target_id"]) != (kind, identity)] + [record]
                     state.update(status="completed", file=record["file"], sha256=record["sha256"], completed_at=now())
                     run["generated"].append(key)
@@ -354,7 +411,7 @@ class BatchWorker:
             if complete:
                 self.data["status"] = "complete"
             elif self.data["status"] == "running":
-                self.data["status"] = "awaiting_smoke_review" if plan["mode"] == "smoke" else "partial"
+                self.data["status"] = "references_ready" if plan["mode"] == "references" else "awaiting_smoke_review" if plan["mode"] == "smoke" else "partial"
             if controls.get("quality_reviewed"):
                 smoke = self._asset("scene", self.data.get("smoke_scene_id"))
                 self.data["smoke_quality_review"] = {"at": now(), "explicit_user_confirmation": True,

@@ -5,6 +5,8 @@ Importing this module does not import/install Torch or download weights.
 import platform
 import time
 
+from .image_conditioning import CONDITIONING_REVISION, reference_layout, reference_masks
+
 
 class ColabDiffusersBackend:
     def __init__(self, settings, previous=None):
@@ -66,20 +68,36 @@ class ColabDiffusersBackend:
         self.provenance["adapter_weight"] = f"{folder}/{weight}"
 
     def generate(self, job, references):
-        from PIL import Image, ImageOps
+        from PIL import Image
         torch = self.torch
         options = {}
+        token_counts = {}
+        for name in ("tokenizer", "tokenizer_2"):
+            tokenizer = getattr(self.pipe, name, None)
+            if tokenizer is None:
+                continue
+            counts = {label: len(tokenizer(text, truncation=False)["input_ids"])
+                      for label, text in (("positive", job["prompt"]), ("negative", job["negative_prompt"]))}
+            limit = tokenizer.model_max_length
+            if any(count > limit for count in counts.values()):
+                raise ValueError(f"{name} prompt would be truncated ({counts}, limit {limit}); shorten it before inference")
+            token_counts[name] = {**counts, "limit": limit}
         conditioning = "text_only" if job["kind"] == "character" else "not_applicable"
+        layout, mask_hashes = None, {}
         if references:
+            from diffusers.image_processor import IPAdapterMaskProcessor
             self._adapter()
-            self.pipe.set_ip_adapter_scale(self.settings.adapter_scale)
-            board = Image.new("RGB", (512, 512), "#f4f4ee")
-            cell = 512 // len(references)
-            for index, image in enumerate(references.values()):
-                fitted = ImageOps.contain(image, (max(8, cell - 12), 500))
-                board.paste(fitted, (index * cell + (cell - fitted.width) // 2, (512 - fitted.height) // 2))
-            options["ip_adapter_image"] = board
-            conditioning = "ip_adapter_contact_sheet"
+            layout = reference_layout(references)
+            masks, mask_hashes = reference_masks(layout, job["size"])
+            self.pipe.set_ip_adapter_scale([[self.settings.adapter_scale] * len(references)])
+            # One adapter, N separately encoded images: outer list is adapters;
+            # inner list is subjects. Masks are attention gates, not scene pixels.
+            options["ip_adapter_image"] = [[references[c] for c in layout["reference_order"]]]
+            w, h = job["size"]
+            tensor = IPAdapterMaskProcessor().preprocess(masks, height=h, width=w)
+            tensor = tensor.reshape(1, len(masks), h, w).to(device=self.pipe._execution_device, dtype=self.pipe.unet.dtype)
+            options["cross_attention_kwargs"] = {"ip_adapter_masks": [tensor]}
+            conditioning = CONDITIONING_REVISION
         elif self.adapter_loaded:
             if job["kind"] == "character":
                 raise RuntimeError("New references must be generated before scenes in this worker invocation")
@@ -95,6 +113,7 @@ class ColabDiffusersBackend:
         if getattr(output, "nsfw_content_detected", None) and any(output.nsfw_content_detected):
             raise RuntimeError("Pipeline flagged this image; candidate was not exported")
         return output.images[0], {**self.provenance, "conditioning": conditioning,
+            "conditioning_layout": layout, "mask_sha256": mask_hashes, "prompt_token_counts": token_counts,
             "adapter_id": self.provenance["adapter_id"] if references else None,
             "adapter_revision": self.provenance["adapter_revision"] if references else None,
             "adapter_weight": self.provenance.get("adapter_weight") if references else None,

@@ -14,6 +14,7 @@ from src.assets import export_request
 from src.batch_handoff import create_handoff, receive_result, validate_result
 from src.characters import load_bible
 from src.image_batch import BatchWorker, BatchSettings, reference_sources, scene_seed, contact_sheet
+from src.image_conditioning import reference_layout
 from src.production import ROOT, produce
 from src.production_state import file_hash, write_json
 from src.schema import load_story
@@ -34,10 +35,11 @@ class SyntheticBackend:
             raise RuntimeError("Synthetic adapter/generation failure")
         if job["id"] == self.interrupt_id:
             raise KeyboardInterrupt("Synthetic interrupted runtime")
-        condition = "text_only" if job["kind"] == "character" else "ip_adapter_contact_sheet" if refs else "not_applicable"
+        condition = job["conditioning"]
         if self.bad_conditioning:
             condition = "text_only"
-        return Image.new("RGB", job["size"], "#f2ab59"), {**self.provenance, "conditioning": condition}
+        return Image.new("RGB", job["size"], "#f2ab59"), {
+            **self.provenance, "conditioning": condition, "conditioning_layout": reference_layout(refs) if refs else None}
 
 
 class BatchTests(unittest.TestCase):

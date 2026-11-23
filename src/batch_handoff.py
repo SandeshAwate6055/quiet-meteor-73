@@ -9,11 +9,12 @@ from .asset_store import AssetStore, digest, read_image
 from .assets import import_batch, review
 from .characters import load_bible
 from .image_batch import inside, validate_request, scene_seed
+from .image_conditioning import CONDITIONING_REVISION, reference_layout
 from .production_state import file_hash, now, write_json, production_directory
 from .schema import load_story
 
 MODULES = ("__init__.py", "asset_store.py", "characters.py", "schema.py", "production_state.py",
-           "image_batch.py", "colab_images.py")
+           "image_batch.py", "colab_images.py", "image_conditioning.py")
 
 
 def create_handoff(request_path, store, destination):
@@ -34,7 +35,7 @@ def create_handoff(request_path, store, destination):
             files[relative] = payload
             entries.append({"target_id": identity, "file": relative, "sha256": checksum,
                 "asset_id": character["approved_asset_id"], "approval": "approved",
-                "metadata": {"source": "current approved production request"}})
+                "metadata": {**character.get("approved_reference_metadata", {}), "source": "current approved production request"}})
             continue
         for record in sorted(catalog["assets"].values(), key=lambda r: r["asset_id"]):
             if record["kind"] != "character" or record["target_id"] != identity:
@@ -84,7 +85,7 @@ def validate_result(manifest_path, expected_request_hash=None):
         raise ValueError("Invalid result version/assets or request checksum")
     if expected_request_hash and actual_request_hash != expected_request_hash:
         raise ValueError("Result belongs to a different production request")
-    if data.get("worker_version") == 1 and (not isinstance(data.get("jobs"), dict) or
+    if data.get("worker_version") in (1, 2) and (not isinstance(data.get("jobs"), dict) or
             any(not isinstance(job, dict) for job in data["jobs"].values())):
         raise ValueError("Worker result requires a jobs object of job records")
     seen, completed = set(), []
@@ -117,11 +118,16 @@ def validate_result(manifest_path, expected_request_hash=None):
                 raise ValueError("Missing model identity/revision")
             if metadata["prompt"] != (characters if kind == "character" else scenes)[target]["prompt"] or list(image.size) != metadata["resolution"]:
                 raise ValueError("Result prompt or resolution differs from its request/decoded image")
+            expected_negative = (characters if kind == "character" else scenes)[target].get("negative_prompt", request["negative_prompt"])
+            if metadata.get("negative_prompt", expected_negative) != expected_negative:
+                raise ValueError("Result negative prompt differs from its request")
         if kind == "scene":
             identities = scenes[target]["characters"]
-            expected = "ip_adapter_contact_sheet" if identities else "not_applicable"
+            expected = (CONDITIONING_REVISION if data.get("worker_version") == 2 else "ip_adapter_contact_sheet") if identities else "not_applicable"
             if metadata.get("conditioning") != expected:
                 raise ValueError("Scene lacks required reference conditioning")
+            if data.get("worker_version") == 2 and identities and metadata.get("conditioning_layout") != reference_layout(identities):
+                raise ValueError("Scene reference placement does not match the declared conditioning layout")
             refs = metadata.get("references", {})
             if set(refs) != set(identities):
                 raise ValueError("Scene reference metadata does not match character IDs")
@@ -130,12 +136,12 @@ def validate_result(manifest_path, expected_request_hash=None):
                 if file_hash(ref_path) != reference["sha256"]:
                     raise ValueError("Scene conditioning reference checksum mismatch")
                 read_image(ref_path)
-            if data.get("worker_version") == 1 and metadata["seed"] != scene_seed(target, data["settings"]["base_seed"]):
+            if data.get("worker_version") in (1, 2) and metadata["seed"] != scene_seed(target, data["settings"]["base_seed"]):
                 raise ValueError("Scene seed does not match the deterministic batch seed")
             completed.append(target)
     missing = [s for s in scenes if s not in completed]
     failed = [s for s in scenes if data.get("jobs", {}).get(f"scene:{s}", {}).get("status") == "failed"]
-    if data.get("worker_version") == 1:
+    if data.get("worker_version") in (1, 2):
         if not isinstance(data.get("jobs"), dict):
             raise ValueError("Worker result requires jobs object")
         expected_completion = {"completed_scene_ids": [s for s in scenes if s in completed], "missing_scene_ids": missing, "failed_scene_ids": failed}

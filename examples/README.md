@@ -1,4 +1,59 @@
-# Portable Colab handoff
+# Revised challenge smoke (v2)
+
+Use `challenge_smoke_v2.zip` with the updated batch notebook. `challenge_smoke_v2.json` is its readable request. The original `colab_handoff.zip` and its historical references are retained unchanged.
+
+Regenerate the identical v2 package from the current code without loading a model:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.prepare_challenge_smoke
+```
+
+The builder uses existing request export/handoff APIs and refuses to overwrite a different existing package. The request contains **only `challenge`**, fresh single-view reference specifications, separate negative prompts, masked-reference conditioning, a failed-previous-smoke note and a policy disabling full batches. No model weights, credentials, historical PNGs, local paths or generated scene are included. New reference candidates must be made on Colab, not selected from the old character sheet.
+
+Open `notebooks/phase2_batch_worker.ipynb` in a fresh Colab/Drive copy. On CPU run cells 1–3 with `MODE="dry_run"`; upload this v2 ZIP and keep the printed `PACKAGE_PATH`. Leave `RESULT_BATCH_ID=""` so a new content/config/code identity is used.
+
+For reference generation (only when you intentionally choose a GPU runtime):
+
+```python
+MODE = "references"
+MAX_NEW_IMAGES = 2
+RUN_GENERATION = True
+INSTALL_COLAB_DEPS = True
+LICENSES_REVIEWED = True
+REFERENCES_REVIEWED = False
+QUALITY_REVIEWED = False
+ALLOW_UNAPPROVED_REFERENCE_PREVIEW = False
+```
+
+Run cells 1–5. Inspect the two NEW candidates before spending another image: Hare must be one full-body 3/4 white rabbit, pink inner ears, blue vest; Tortoise must be one full-body 3/4 side view with green skin and a clearly visible rounded brown patterned back shell. No pedestal, duplicate figures, front/back sheet or split panels. Failed references require a revised/new batch; keep all old files.
+
+Only after both pass human reference review, keep the same saved package and result folder and change:
+
+```python
+MODE = "smoke"
+MAX_NEW_IMAGES = 1
+REFERENCES_REVIEWED = True
+ALLOW_UNAPPROVED_REFERENCE_PREVIEW = True
+QUALITY_REVIEWED = False
+```
+
+Run cells 1–5 again. This uses the two new (still unapproved) reference candidates for experimental preview and generates only `challenge`. It does not approve anything in the local asset library. The result must be exactly two correct animals at one sunny forest race starting line in one unified cinematic frame. If it fails, stop and retain it as a failed visual candidate. Do not schedule the remaining four scenes. Export with cell 6 and disconnect/delete the GPU runtime when finished.
+
+The previous smoke's three figures/panels are consistent with a global IP-Adapter input containing a two-view rabbit plus another reference. The code did combine those pixels into a 512-square reference board; that is a verified implementation fact. The individual cause of color drift or each artifact cannot be proved without an ablation. New inputs avoid that composition, use separate masked embeddings at scale 0.35 and shorter subject-first prompts. Masks guide regions but do not guarantee independent animal identities or exact layouts. This revision has **not** been executed on GPU.
+
+The underlying import/approval controls and version-1 result envelope remain compatible; new results carry worker-version 2, generation identity, settings, reference hashes, mask layout/hashes, prompts and actual tokenizer counts. The original deterministic scene seed formula is unchanged. No human scene-quality acceptance is inferred from a completed generation job.
+
+For local candidate review after exporting, extract the result ZIP to a new folder and use the existing asset commands:
+
+```powershell
+$smokeManifest = Read-Host 'Full path to the NEW extracted smoke manifest.json'
+.\.venv\Scripts\python.exe -m src.assets import-batch $smokeManifest
+.\.venv\Scripts\python.exe -m src.assets review --output-dir outputs/challenge_v2_review
+```
+
+This is a standalone quality-control request, not a registered production-cache request. Candidate import/review leaves all approvals unchanged. Keep the failed smoke and old references unapproved; production selection changes only after your separate explicit approval of acceptable candidates. The current milestone stops at reviewing `challenge`.
+
+## Historical public handoff (v1)
 
 `colab_handoff.zip` is the audited public version of the existing small local request package. It is intended for the dry run and an explicitly started one-scene smoke test in `notebooks/phase2_batch_worker.ipynb`. It contains no model weights, credentials, videos or private datasets.
 

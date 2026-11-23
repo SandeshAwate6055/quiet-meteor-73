@@ -8,9 +8,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageOps
 
 from .asset_store import AssetStore, digest, read_image
-from .characters import load_bible, safe_relative, scene_prompt
+from .characters import (load_bible, safe_relative, scene_prompt, reference_prompt,
+                         PROMPT_REVISION, REFERENCE_SPEC_REVISION, SCENE_NEGATIVE_PROMPT, REFERENCE_NEGATIVE_PROMPT)
 from .schema import load_story
 from .visuals import font
+from .image_conditioning import CONDITIONING_REVISION
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,12 +84,14 @@ def export_request(store, story, bible, destination, selected=None):
     if not selected or len(set(selected)) != len(selected) or set(selected) - {s.id for s in story.scenes}:
         raise ValueError("Select unique scene ids present in the story")
     request = {"version": 1, "title": story.title, "style": bible.style, "environment": bible.environment,
-               "characters": [], "scenes": [], "locked_scene_ids": [], "negative_prompt":
-               "text, watermark, logo, scary, violence, photorealistic, deformed, extra limbs, duplicate characters"}
+               "characters": [], "scenes": [], "locked_scene_ids": [], "prompt_revision": PROMPT_REVISION,
+               "negative_prompt": SCENE_NEGATIVE_PROMPT,
+               "generation_config": {"prompt_revision": PROMPT_REVISION, "conditioning": CONDITIONING_REVISION}}
     for character in bible.characters.values():
         row = {"id": character.id, "name": character.name, "appearance": character.appearance,
                "reference_image_paths": list(character.reference_image_paths), "metadata": character.metadata,
-               "prompt": f"{bible.style}. Character reference, exactly one {character.name}: {character.appearance}. Full body, three-quarter view, neutral pale background, no lettering."}
+               "prompt": reference_prompt(character, bible), "negative_prompt": REFERENCE_NEGATIVE_PROMPT,
+               "reference_spec_revision": REFERENCE_SPEC_REVISION}
         approved = store.approved("character", character.id)
         if approved:
             record, path = approved
@@ -97,11 +101,13 @@ def export_request(store, story, bible, destination, selected=None):
             image.save(buffer, format="PNG")
             row["approved_reference_png_base64"] = base64.b64encode(buffer.getvalue()).decode("ascii")
             row["approved_asset_id"] = record["asset_id"]
+            row["approved_reference_metadata"] = record["metadata"]
             row["approved_reference_sha256"] = digest(buffer.getvalue())
         request["characters"].append(row)
     for scene in story.scenes:
         if scene.id in selected:
-            request["scenes"].append({"id": scene.id, "characters": list(scene.characters), "prompt": scene_prompt(scene, bible)})
+            request["scenes"].append({"id": scene.id, "characters": list(scene.characters),
+                                      "prompt": scene_prompt(scene, bible), "negative_prompt": SCENE_NEGATIVE_PROMPT})
             if store.approved("scene", scene.id):
                 request["locked_scene_ids"].append(scene.id)
     destination.parent.mkdir(parents=True, exist_ok=True)
