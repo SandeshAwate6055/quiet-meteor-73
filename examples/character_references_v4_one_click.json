@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "title": "Tiny Steps, Big Finish",
+  "style": "Friendly high-quality 3D cartoon",
+  "environment": "Plain warm-gray studio background",
+  "characters": [
+    {
+      "id": "hare",
+      "name": "Rabbit",
+      "appearance": "white fur, pink inner ears, blue vest",
+      "reference_image_paths": [
+        "assets/references/hare.png"
+      ],
+      "metadata": {
+        "role": "Fast, overconfident but kind friend",
+        "continuity": "Keep fur white and vest blue in every scene",
+        "reference_pose": "Single full-body three-quarter view, paws on plain ground, one view only",
+        "reference_subject": "Exactly one white rabbit with pink inner ears and a small pink nose. Its only garment is a plain royal-blue sleeveless vest, open at the neck. Its neck has only white fur, without neckwear. Its hips and both legs are uncovered white fur, without lower-body clothing. Show its entire body from ear tips to both feet, standing naturally and turned 45 degrees to the camera so the front and one side of its torso are visible.",
+        "reference_negative_prompt": "bow tie, necktie, scarf, shorts, trousers, pants, shirt, hat, jewelry, pink vest, extra clothing, accessories, frontal pose, cropped feet, duplicate animals, multiple views, tiled wallpaper, repeating motifs, split panels, character sheet, collage, text, watermark",
+        "reference_spec_revision": "reference_flux_klein_v4"
+      },
+      "prompt": "Exactly one white rabbit with pink inner ears and a small pink nose. Its only garment is a plain royal-blue sleeveless vest, open at the neck. Its neck has only white fur, without neckwear. Its hips and both legs are uncovered white fur, without lower-body clothing. Show its entire body from ear tips to both feet, standing naturally and turned 45 degrees to the camera so the front and one side of its torso are visible. A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, warm softbox lighting and a subtle ground shadow. Plain warm-gray studio background. One unified frame, one full-body subject, no text. The camera is at the character's eye level with a three-quarter view, not a front view.",
+      "negative_prompt": "bow tie, necktie, scarf, shorts, trousers, pants, shirt, hat, jewelry, pink vest, extra clothing, accessories, frontal pose, cropped feet, duplicate animals, multiple views, tiled wallpaper, repeating motifs, split panels, character sheet, collage, text, watermark",
+      "reference_spec_revision": "reference_flux_klein_v4"
+    },
+    {
+      "id": "tortoise",
+      "name": "Tortoise",
+      "appearance": "green skin, visible rounded brown patterned shell",
+      "reference_image_paths": [
+        "assets/references/tortoise.png"
+      ],
+      "metadata": {
+        "role": "Patient, determined friend",
+        "continuity": "Keep skin green and shell brown in every scene",
+        "reference_pose": "Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground",
+        "reference_subject": "Exactly one friendly green tortoise. Its head, neck and all four legs have fresh leaf-green skin. Its back carries one smooth rounded dome-shaped shell, distinctly warm chocolate BROWN rather than green or olive. Clearly defined hexagonal scutes are shallow divisions on the curved brown shell surface; the shell is one continuous natural dome, not stacked objects or geometric spikes. Show the complete body with four legs and tail visible, turned 45 degrees to the camera with its side and brown back shell clearly visible. It wears no clothing.",
+        "reference_negative_prompt": "gray skin, grayish skin, olive shell, green shell, angular shell, stacked shell, shell spikes, missing legs, extra limbs, cropped body, repeated tortoises, multiple animals, wallpaper, tiled composition, character sheet, collage, split panels, flat drawing, text, watermark",
+        "reference_spec_revision": "reference_flux_klein_v4"
+      },
+      "prompt": "Exactly one friendly green tortoise. Its head, neck and all four legs have fresh leaf-green skin. Its back carries one smooth rounded dome-shaped shell, distinctly warm chocolate BROWN rather than green or olive. Clearly defined hexagonal scutes are shallow divisions on the curved brown shell surface; the shell is one continuous natural dome, not stacked objects or geometric spikes. Show the complete body with four legs and tail visible, turned 45 degrees to the camera with its side and brown back shell clearly visible. It wears no clothing. A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, warm softbox lighting and a subtle ground shadow. Plain warm-gray studio background. One unified frame, one full-body subject, no text. The camera is at the character's eye level with a three-quarter view, not a front view.",
+      "negative_prompt": "gray skin, grayish skin, olive shell, green shell, angular shell, stacked shell, shell spikes, missing legs, extra limbs, cropped body, repeated tortoises, multiple animals, wallpaper, tiled composition, character sheet, collage, split panels, flat drawing, text, watermark",
+      "reference_spec_revision": "reference_flux_klein_v4"
+    }
+  ],
+  "scenes": [],
+  "locked_scene_ids": [],
+  "prompt_revision": "single_scene_v2",
+  "negative_prompt": "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal",
+  "generation_config": {
+    "prompt_revision": "single_scene_v2",
+    "conditioning": "ip_adapter_masked_references_v2",
+    "family": "flux2_klein",
+    "steps": 4,
+    "reference_size": 1024,
+    "base_seed": 20261126,
+    "backend_profile_sha256": "d233b0d9071144b46c1c8f5b49f6c9b8ea0f984f799c67376ea86e07e94ffbbb"
+  },
+  "reference_prompt_revision": "reference_flux_klein_v4",
+  "generation_policy": {
+    "reference_only": true,
+    "required_reference_ids": [
+      "hare",
+      "tortoise"
+    ],
+    "allowed_scene_ids": [],
+    "full_batch_enabled": false,
+    "fresh_references": true,
+    "reference_spec_revision": "reference_flux_klein_v4",
+    "reference_attempt": 1
+  },
+  "quality_review": {
+    "previous_references": "v2_and_v3_failed_human_visual_review",
+    "approved": false
+  }
+}

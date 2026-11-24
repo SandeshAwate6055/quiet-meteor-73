@@ -2,7 +2,45 @@
 
 A local-first Python project for turning structured children's stories into narrated landscape videos and vertical Shorts. The current proof of concept combines offline speech, Pillow/approved illustrations, FFmpeg, and a resumable production orchestrator. A manually started Colab worker supplies candidate AI illustrations; the longer-term goal is polished 3–5-minute animated stories.
 
-## Current quality gate: v3 character references only
+## Current quality gate: v4 one-click character references (FLUX.2-klein-4B)
+
+Both real v2 and v3 SDXL character references failed visual review:
+- **v3 Hare:** One white rabbit in a blue vest, but included an unwanted pink bow tie, unwanted blue shorts, and a frontal pose instead of a three-quarter view.
+- **v3 Tortoise:** One tortoise, but had grayish skin instead of leaf-green, an olive/greenish shell with abnormal stacked geometry instead of a smooth rounded brown dome, and more realistic styling than the rabbit.
+
+Neither reference was approved, and all historical results remain preserved untouched. This milestone upgrades character reference generation to **`black-forest-labs/FLUX.2-klein-4B`** (pinned revision `e7b7dc27f91deacad38e78976d1f2b499d76a294`, **Apache-2.0** license, 4 distilled steps, 1024×1024, BF16) and delivers a **one-click Google Colab notebook**. **Do not generate scenes or animation yet.**
+
+[**Open One-Click Character Reference Notebook in Google Colab**](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_generation.ipynb) · [Version-matched v4 package](examples/character_references_v4_one_click.zip) · [Generation profile](configs/one_click_generation.json)
+
+### Exact One-Click Colab Instructions
+1. Open [`notebooks/one_click_generation.ipynb`](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_generation.ipynb) in Google Colab.
+2. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM** enabled; requires >= 22 GiB VRAM and >= 24 GiB host RAM).
+3. Click **Runtime > Run all**.
+4. Wait for automatic hardware preflight, dependency installation, model load, generation of the **two** reference candidates (`hare` and `tortoise`), inline display of the images and contact sheet, and automatic download of the result ZIP.
+5. Disconnect/delete the Colab GPU runtime once the ZIP download completes.
+
+- **No manual configuration, no dry-run mode switch, no ZIP upload, and no Google Drive login required.**
+- Uses temporary Colab storage (`/content/story_one_click`) by default (results in the VM are lost when the runtime disconnects; optional persistent Drive/resume can be enabled by setting `USE_GOOGLE_DRIVE = True` in Cell 1).
+- Legacy SDXL (`src/colab_images.py`) remains preserved as an explicit provider in the shared worker.
+
+Reproduce the v4 one-click package and notebook locally without loading any model:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.build_one_click_notebook
+```
+
+Validate and import the downloaded v4 result ZIP locally (imported candidates remain **unapproved** until human review and explicit approval):
+
+```powershell
+$referenceManifest = Read-Host 'Full path to extracted v4 manifest.json'
+.\.venv\Scripts\python.exe -c "import sys; from src.batch_handoff import validate_result; print(validate_result(sys.argv[1]))" $referenceManifest
+.\.venv\Scripts\python.exe -m src.assets import-batch $referenceManifest
+.\.venv\Scripts\python.exe -m src.assets review --output-dir outputs/reference_v4_review
+```
+
+---
+
+## Previous quality gate: v3 character references (historical SDXL workflow)
 
 Both real v2 references failed human review (pink vest/bow tie; tiled green-shelled tortoises). Nothing from those results is approved. This task revises reference generation only; **do not generate challenge or any other scene yet**.
 

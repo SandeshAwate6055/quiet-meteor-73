@@ -1,0 +1,7 @@
+# Colab ONLY. Keep the local Windows requirements.txt lightweight.
+diffusers==0.37.1
+transformers==4.57.6
+accelerate==1.12.0
+huggingface-hub==0.36.2
+safetensors==0.7.0
+Pillow==12.1.1

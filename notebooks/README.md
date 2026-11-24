@@ -1,6 +1,17 @@
 # Phase 2 Colab quality test
 
-## Current quality gate: v3 references only
+## Current quality gate: v4 one-click character references (`one_click_generation.ipynb`)
+
+Both v2 and v3 SDXL character references failed visual review (v3 rabbit had a pink bow tie, blue shorts, and frontal pose; v3 tortoise had grayish skin, an olive shell with abnormal geometry, and mismatched realism). All historical v2/v3 artifacts remain preserved and unapproved.
+
+Use **[`notebooks/one_click_generation.ipynb`](one_click_generation.ipynb)** ([Open in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_generation.ipynb)):
+1. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM**).
+2. Click **Runtime > Run all**.
+3. Wait for the 2 character reference images (`hare` and `tortoise`) and contact sheet to display and the result ZIP to download automatically.
+
+No separate CPU dry run, no variable edits, no manual ZIP upload, and no Google Drive authentication are required. Temporary Colab storage (`/content/story_one_click`) is used by default and lost on disconnect; optional persistent storage (`USE_GOOGLE_DRIVE = True`) is available in Cell 1. The v4 profile ([`configs/one_click_generation.json`](../configs/one_click_generation.json)) uses [`black-forest-labs/FLUX.2-klein-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (revision `e7b7dc27f91deacad38e78976d1f2b499d76a294`, **Apache-2.0** license, 4 steps, 1024×1024, BF16) while preserving `ColabDiffusersBackend` (SDXL/SD1.5) in the shared worker. **Zero scenes are generated; generated images are unapproved candidates until human review.**
+
+## Historical quality gate: v3 references only
 
 The real v2 references failed visual review. Use **`examples/character_references_v3.zip`** with a fresh copy of `phase2_batch_worker.ipynb`. [Exact v3 settings and retry instructions](REFERENCE_V3.md) cover CPU dry run, two text-only SDXL character images, review/export and stop. **Zero scenes are requested; challenge, smoke and full modes are blocked.** No image is automatically approved. V3 has not run on GPU; local synthetic tests do not establish visual quality.
 

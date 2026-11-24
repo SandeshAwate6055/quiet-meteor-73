@@ -37,10 +37,10 @@ def prepare(destination, name="challenge_smoke_v2"):
         package_path = directory / "package.zip"
         metadata = create_handoff(request_path, store, package_path)
         for source, target in ((request_path, destination / f"{name}.json"), (package_path, destination / f"{name}.zip")):
-            if target.exists():
-                if file_hash(target) != file_hash(source):
-                    raise ValueError(f"Existing artifact differs: {target}. Choose a NEW --name; nothing was overwritten.")
-            else:
+            if target.exists() and file_hash(target) != file_hash(source):
+                raise ValueError(f"Existing artifact differs: {target}. Choose a NEW --name; nothing was overwritten.")
+        for source, target in ((request_path, destination / f"{name}.json"), (package_path, destination / f"{name}.zip")):
+            if not target.exists():
                 with target.open("xb") as stream:
                     stream.write(source.read_bytes())
     return {**metadata, "package_path": str(destination / f"{name}.zip"), "request_path": str(destination / f"{name}.json"),

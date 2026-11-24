@@ -14,10 +14,10 @@ from .production_state import file_hash, now, write_json, production_directory
 from .schema import load_story
 
 MODULES = ("__init__.py", "asset_store.py", "characters.py", "schema.py", "production_state.py",
-           "image_batch.py", "colab_images.py", "image_conditioning.py")
+           "image_batch.py", "colab_images.py", "image_conditioning.py", "modern_images.py", "one_click.py")
 
 
-def create_handoff(request_path, store, destination):
+def create_handoff(request_path, store, destination, *, extra_files=None):
     """Package the request + worker source + available references; never approve."""
     request_path, destination = Path(request_path), Path(destination)
     request = json.loads(request_path.read_text(encoding="utf-8"))
@@ -56,6 +56,11 @@ def create_handoff(request_path, store, destination):
     files["references.json"] = json.dumps({"version": 1, "references": entries}, indent=2).encode()
     for name in MODULES:
         files[f"src/{name}"] = Path(__file__).with_name(name).read_bytes()
+    for name, payload in (extra_files or {}).items():
+        inside(Path("."), name)  # Apply the existing safe-relative path rules.
+        if name in files or name == "bundle_index.json" or not isinstance(payload, bytes):
+            raise ValueError("Extra handoff files must be unique safe paths with byte payloads")
+        files[name] = payload
     index = {"version": 1, "request_sha256": file_hash(request_path), "warnings": warnings,
              "files": {name: digest(payload) for name, payload in files.items()}}
     files["bundle_index.json"] = json.dumps(index, indent=2).encode()
@@ -80,6 +85,13 @@ def validate_result(manifest_path, expected_request_hash=None):
     request_path = path.parent / "request.json"
     request = json.loads(request_path.read_text(encoding="utf-8"))
     characters, scenes = validate_request(request)
+    profile_hash = request.get("generation_config", {}).get("backend_profile_sha256")
+    profile = None
+    if profile_hash:
+        profile_path = path.parent / "generation_profile.json"
+        if file_hash(profile_path) != profile_hash:
+            raise ValueError("Result generation profile checksum mismatch")
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
     actual_request_hash = file_hash(request_path)
     if data.get("version") != 1 or not isinstance(data.get("assets"), list) or data.get("request_sha256") != actual_request_hash:
         raise ValueError("Invalid result version/assets or request checksum")
@@ -103,6 +115,10 @@ def validate_result(manifest_path, expected_request_hash=None):
         metadata = row.get("metadata")
         if not isinstance(metadata, dict):
             raise ValueError("Result metadata must be an object")
+        if profile and (metadata.get("model_id") != profile["model_id"] or
+                        metadata.get("model_revision") != profile["model_revision"] or
+                        metadata.get("model_license") != profile["model_license"]):
+            raise ValueError("Result model provenance differs from its pinned generation profile")
         # Reused references retain original provenance; generated images require
         # full prompt/model/seed/timing metadata, including reference provenance.
         if not metadata.get("reused_reference"):

@@ -10,6 +10,8 @@ from .image_conditioning import CONDITIONING_REVISION, reference_layout, referen
 
 class ColabDiffusersBackend:
     def __init__(self, settings, previous=None):
+        if settings.family not in ("sdxl", "sd15"):
+            raise ValueError("This legacy backend supports only SDXL/SD15; select the matching provider")
         try:
             import google.colab
         except ImportError as exc:

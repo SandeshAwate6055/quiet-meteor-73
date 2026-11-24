@@ -89,8 +89,8 @@ class BatchSettings:
     def validate(self):
         if self.conditioning != CONDITIONING_REVISION or self.prompt_revision != PROMPT_REVISION:
             raise ValueError("Use the current explicit prompting/conditioning revision in a NEW result batch")
-        if self.family not in ("sdxl", "sd15"):
-            raise ValueError("Choose sdxl or the documented smaller sd15 fallback explicitly")
+        if self.family not in ("sdxl", "sd15", "flux2_klein"):
+            raise ValueError("Choose sdxl, sd15 or flux2_klein explicitly")
         if isinstance(self.base_seed, bool) or not isinstance(self.base_seed, int) or not 0 <= self.base_seed < 2**32:
             raise ValueError("Invalid base seed")
         if isinstance(self.steps, bool) or not isinstance(self.steps, int) or not 1 <= self.steps <= 100:
@@ -101,13 +101,15 @@ class BatchSettings:
             raise ValueError("reference_size must be 512, 768 or 1024")
 
     def size(self, kind):
-        return ((self.reference_size, self.reference_size) if kind == "character" else (1024, 576)) if self.family == "sdxl" else ((512, 512) if kind == "character" else (768, 432))
+        return ((512, 512) if kind == "character" else (768, 432)) if self.family == "sd15" else ((self.reference_size, self.reference_size) if kind == "character" else (1024, 576))
 
 
 def generation_identity(request_hash, settings):
     """Request, settings and generation implementation all bind cache identity."""
     implementation = {name: file_hash(Path(__file__).with_name(name)) for name in
                       ("image_batch.py", "colab_images.py", "image_conditioning.py", "characters.py")}
+    if settings.family == "flux2_klein":
+        implementation.update({name: file_hash(Path(__file__).with_name(name)) for name in ("modern_images.py", "one_click.py")})
     return fingerprint({"request_sha256": request_hash, "settings": asdict(settings), "implementation": implementation})
 
 
@@ -145,7 +147,7 @@ class BatchWorker:
         self.settings.validate()
         requested_config = self.request.get("generation_config", {})
         if any(requested_config.get(key, getattr(self.settings, key)) != getattr(self.settings, key)
-               for key in ("conditioning", "prompt_revision", "reference_size", "base_seed")):
+               for key in ("conditioning", "prompt_revision", "reference_size", "base_seed", "family", "steps")):
             raise ValueError("Request prompting/conditioning configuration is incompatible with this worker; prepare a NEW request/batch")
         self.generation_identity = generation_identity(self.request_hash, self.settings)
         self.references = list(references or [])

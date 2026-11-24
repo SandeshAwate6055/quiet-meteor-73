@@ -1,4 +1,20 @@
-# Current handoff: character references v3 only
+# Current handoff: character references v4 one-click (`FLUX.2-klein-4B`)
+
+Use [`character_references_v4_one_click.zip`](character_references_v4_one_click.zip) and [`character_references_v4_one_click.json`](character_references_v4_one_click.json) via [`notebooks/one_click_generation.ipynb`](../notebooks/one_click_generation.ipynb). The one-click notebook automatically retrieves and verifies this exact package by SHA256 (with an embedded offline copy inside the notebook) so no manual ZIP upload is needed.
+
+Reproduce the v4 package and notebook from this checkout with:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.build_one_click_notebook
+```
+
+To prepare a single-character retry package without scheduling the other character:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.one_click --characters tortoise --attempt 2 --name tortoise_reference_v4_retry2 --output-dir outputs/reference_retry_v4
+```
+
+## Historical handoff: character references v3 only
 
 Use [character_references_v3.zip](character_references_v3.zip) and [its readable request](character_references_v3.json) with the updated batch notebook. [Exact Colab steps, reference settings, diagnosis and single-character retry commands](../notebooks/REFERENCE_V3.md).
 
