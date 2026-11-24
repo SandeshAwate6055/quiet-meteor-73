@@ -2,7 +2,26 @@
 
 A local-first Python project for turning structured children's stories into narrated landscape videos and vertical Shorts. The current proof of concept combines offline speech, Pillow/approved illustrations, FFmpeg, and a resumable production orchestrator. A manually started Colab worker supplies candidate AI illustrations; the longer-term goal is polished 3–5-minute animated stories.
 
-## Current quality gate: v4 one-click character references (FLUX.2-klein-4B)
+## Current quality gate: v4 one-click first scene (`challenge`) with approved references
+
+The v4 character references (`hare` and `tortoise`) generated with `black-forest-labs/FLUX.2-klein-4B` passed visual review and have been imported and **approved** in the local asset library (`assets/library/catalog.json`):
+- **Approved Hare:** `character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8` (from `references_v4_447859094db50120`)
+- **Approved Tortoise:** `character_tortoise_613f0557a5efa72b3f0ddff9e5ae8314539e8a31eecae9a15b700ed8a675e3bb` (from `references_v4_447859094db50120`)
+
+The current target is to generate **ONLY the first scene (`challenge`)** at `1024×576`, reusing both approved character references with `FLUX.2-klein-4B` multi-reference conditioning. **Do not generate the remaining four scenes or animation yet.**
+
+[**Open One-Click `challenge` Scene Notebook in Google Colab**](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_challenge_scene.ipynb) · [Version-matched `challenge` package](examples/challenge_scene_v4_one_click.zip) · [Scene generation profile](configs/one_click_challenge_scene.json)
+
+### Exact One-Click Colab Instructions (`challenge` Scene)
+1. Open [`notebooks/one_click_challenge_scene.ipynb`](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_challenge_scene.ipynb) in Google Colab.
+2. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM** enabled; requires >= 22 GiB VRAM and >= 24 GiB host RAM).
+3. Click **Runtime > Run all**.
+4. Wait for automatic hardware preflight, dependency installation, model load, reuse of the 2 approved character references (0 reference regenerations), generation of **only** the `challenge` scene (`1024×576`), inline display of the contact sheet and scene candidate, and automatic download of the result ZIP.
+5. Disconnect/delete the Colab GPU runtime once the ZIP download completes.
+
+---
+
+## Completed quality gate: v4 one-click character references (FLUX.2-klein-4B)
 
 Both real v2 and v3 SDXL character references failed visual review:
 - **v3 Hare:** One white rabbit in a blue vest, but included an unwanted pink bow tie, unwanted blue shorts, and a frontal pose instead of a three-quarter view.

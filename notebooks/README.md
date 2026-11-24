@@ -1,6 +1,17 @@
 # Phase 2 Colab quality test
 
-## Current quality gate: v4 one-click character references (`one_click_generation.ipynb`)
+## Current quality gate: v4 one-click `challenge` scene (`one_click_challenge_scene.ipynb`)
+
+The v4 character references (`hare` and `tortoise`) passed visual review, were imported into `assets/library`, and are pinned as **approved** (`character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8` and `character_tortoise_613f0557a5efa72b3f0ddff9e5ae8314539e8a31eecae9a15b700ed8a675e3bb`).
+
+Use **[`notebooks/one_click_challenge_scene.ipynb`](one_click_challenge_scene.ipynb)** ([Open in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_challenge_scene.ipynb)):
+1. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM**).
+2. Click **Runtime > Run all**.
+3. Wait for the notebook to reuse the 2 approved character references, generate **only** the `challenge` scene (`1024×576`), display the scene and contact sheet inline, and trigger the result ZIP download automatically.
+
+No separate CPU dry run, no variable edits, no manual ZIP upload, and no Google Drive login are required.
+
+## Completed quality gate: v4 one-click character references (`one_click_generation.ipynb`)
 
 Both v2 and v3 SDXL character references failed visual review (v3 rabbit had a pink bow tie, blue shorts, and frontal pose; v3 tortoise had grayish skin, an olive shell with abnormal geometry, and mismatched realism). All historical v2/v3 artifacts remain preserved and unapproved.
 

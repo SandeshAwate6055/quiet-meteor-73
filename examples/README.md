@@ -1,4 +1,8 @@
-# Current handoff: character references v4 one-click (`FLUX.2-klein-4B`)
+# Current handoff: `challenge` scene v4 one-click (`FLUX.2-klein-4B`)
+
+Use [`challenge_scene_v4_one_click.zip`](challenge_scene_v4_one_click.zip) and [`challenge_scene_v4_one_click.json`](challenge_scene_v4_one_click.json) via [`notebooks/one_click_challenge_scene.ipynb`](../notebooks/one_click_challenge_scene.ipynb). It embeds the approved v4 `hare` and `tortoise` references (`approval="approved"`), prevents reference regeneration, and schedules **only** the `challenge` scene (budget 1).
+
+## Completed handoff: character references v4 one-click (`FLUX.2-klein-4B`)
 
 Use [`character_references_v4_one_click.zip`](character_references_v4_one_click.zip) and [`character_references_v4_one_click.json`](character_references_v4_one_click.json) via [`notebooks/one_click_generation.ipynb`](../notebooks/one_click_generation.ipynb). The one-click notebook automatically retrieves and verifies this exact package by SHA256 (with an embedded offline copy inside the notebook) so no manual ZIP upload is needed.
 

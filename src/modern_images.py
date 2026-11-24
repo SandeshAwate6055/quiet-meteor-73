@@ -9,6 +9,9 @@ import re
 import time
 
 
+from .image_conditioning import CONDITIONING_REVISION, reference_layout
+
+
 def validate_profile(profile):
     if (profile.get("version") != 1 or profile.get("model_id") != "black-forest-labs/FLUX.2-klein-4B" or
             not re.fullmatch(r"[a-f0-9]{40}", profile.get("model_revision", "")) or
@@ -16,10 +19,18 @@ def validate_profile(profile):
             profile.get("negative_prompt_mode") != "inline_instruction_constraints_no_cfg"):
         raise ValueError("Unsupported or unpinned one-click model/license/conditioning profile")
     settings = profile.get("settings", {})
+    mode = profile.get("mode", "references")
     if (settings.get("family") != "flux2_klein" or settings.get("steps") != 4 or
-            settings.get("reference_size") != 1024 or profile.get("guidance_scale") != 1.0 or
-            profile.get("max_new_images") != 2 or set(profile.get("characters", {})) != {"hare", "tortoise"}):
-        raise ValueError("Prepared one-click profile requires four steps, 1024px and a strict two-reference budget")
+            settings.get("reference_size") != 1024 or profile.get("guidance_scale") != 1.0):
+        raise ValueError("Prepared one-click profile requires flux2_klein, four steps, 1024px and guidance 1.0")
+    if mode == "references":
+        if profile.get("max_new_images") != 2 or set(profile.get("characters", {})) != {"hare", "tortoise"}:
+            raise ValueError("Prepared one-click profile requires four steps, 1024px and a strict two-reference budget")
+    elif mode == "challenge_scene":
+        if profile.get("max_new_images") != 1 or set(profile.get("scenes", {})) != {"challenge"}:
+            raise ValueError("Prepared one-click challenge profile requires a strict one-scene budget for 'challenge'")
+    else:
+        raise ValueError(f"Unsupported one-click profile mode: {mode}")
     for key, floor in (("min_vram_gib", 22), ("min_ram_gib", 24), ("min_disk_gib", 24)):
         if isinstance(profile.get(key), bool) or not isinstance(profile.get(key), (int, float)) or profile[key] < floor:
             raise ValueError(f"Unsafe hardware requirement: {key}")
@@ -41,6 +52,21 @@ def effective_reference_prompt(job):
     if job["kind"] != "character":
         raise ValueError("This milestone generates character references only; scene generation is disabled")
     return job["prompt"] + "\nDo not include any of the following: " + job["negative_prompt"] + "."
+
+
+def effective_scene_prompt(job, layout):
+    if job["kind"] != "scene":
+        raise ValueError("Expected a scene generation job")
+    order = layout["reference_order"]
+    if order == ["hare", "tortoise"]:
+        binding = (
+            "Use the provided character reference images to keep exact character appearance and 3D render style: "
+            "reference image 1 is the white rabbit in the royal-blue sleeveless vest (place on the left side of the path); "
+            "reference image 2 is the green tortoise with the smooth rounded chocolate-brown shell (place on the right side of the path). "
+        )
+    else:
+        binding = f"Use the provided character reference images in order ({', '.join(order)}) to keep exact character appearance and 3D render style. "
+    return binding + job["prompt"] + "\nDo not include any of the following: " + job["negative_prompt"] + "."
 
 
 class FluxKleinBackend:
@@ -88,26 +114,60 @@ class FluxKleinBackend:
             scheduler={"class": type(self.pipe.scheduler).__name__, "config": dict(self.pipe.scheduler.config)})
 
     def generate(self, job, references):
-        if references:
-            raise ValueError("This reference-only provider does not silently apply or omit scene reference conditioning")
-        prompt = effective_reference_prompt(job)
+        mode = self.profile.get("mode", "references")
+        if job["kind"] == "character":
+            if references:
+                raise ValueError("This reference-only provider does not silently apply or omit scene reference conditioning")
+            prompt = effective_reference_prompt(job)
+            conditioning = "text_only"
+            layout = None
+            ref_images = None
+        elif job["kind"] == "scene" and mode == "challenge_scene":
+            if not references:
+                raise ValueError("Scene generation requires approved character reference images")
+            layout = reference_layout(references)
+            prompt = effective_scene_prompt(job, layout)
+            conditioning = CONDITIONING_REVISION
+            ref_images = [references[c] for c in layout["reference_order"]]
+        else:
+            raise ValueError("This provider profile does not allow unconfigured scene generation")
         # Match the pipeline's Qwen chat template; reject truncation before inference.
         text = self.pipe.tokenizer.apply_chat_template([{"role": "user", "content": prompt}],
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         count = len(self.pipe.tokenizer(text, truncation=False)["input_ids"])
         if count > 512:
-            raise ValueError(f"Effective reference prompt exceeds 512 tokens ({count}); no inference attempted")
+            raise ValueError(f"Effective prompt exceeds 512 tokens ({count}); no inference attempted")
         torch = self.torch
         torch.cuda.reset_peak_memory_stats()
+        call_kwargs = dict(
+            prompt=prompt,
+            height=job["size"][1],
+            width=job["size"][0],
+            guidance_scale=1.0,
+            num_inference_steps=4,
+            num_images_per_prompt=1,
+            max_sequence_length=512,
+            generator=torch.Generator(device="cpu").manual_seed(job["seed"]),
+        )
+        if ref_images is not None:
+            call_kwargs["image"] = ref_images
         try:
             with torch.inference_mode():
-                result = self.pipe(prompt=prompt, height=job["size"][1], width=job["size"][0],
-                    guidance_scale=1.0, num_inference_steps=4, num_images_per_prompt=1, max_sequence_length=512,
-                    generator=torch.Generator(device="cpu").manual_seed(job["seed"]))
+                result = self.pipe(**call_kwargs)
         except Exception as exc:
             if "out of memory" in str(exc).lower():
                 raise RuntimeError("CUDA OOM during generation. No automatic retry. Export partial results, then use A100/High-RAM.") from exc
             raise
-        return result.images[0], {**self.provenance, "conditioning": "text_only", "effective_prompt": prompt,
-            "prompt_token_count": count, "inference_steps": 4, "guidance_scale": 1.0,
-            "peak_cuda_allocated_GiB": round(torch.cuda.max_memory_allocated()/2**30, 3)}
+        meta = {
+            **self.provenance,
+            "conditioning": conditioning,
+            "effective_prompt": prompt,
+            "prompt_token_count": count,
+            "inference_steps": 4,
+            "guidance_scale": 1.0,
+            "peak_cuda_allocated_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 3),
+        }
+        if layout is not None:
+            meta["conditioning_layout"] = layout
+            meta["reference_conditioning_mode"] = "flux2_klein_multi_reference_images"
+        return result.images[0], meta

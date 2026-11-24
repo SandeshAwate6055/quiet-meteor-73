@@ -22,17 +22,22 @@ from src.batch_handoff import validate_result
 from src.characters import load_bible
 from src.colab_images import ColabDiffusersBackend
 from src.image_batch import BatchSettings, BatchWorker, scene_seed
+from src.image_conditioning import CONDITIONING_REVISION, reference_layout
 from src.modern_images import (
     FluxKleinBackend,
     check_hardware,
     effective_reference_prompt,
+    effective_scene_prompt,
     validate_profile,
 )
 from src.one_click import (
+    DEFAULT_CHALLENGE_PACKAGE_NAME,
     DEFAULT_PACKAGE_NAME,
     ROOT,
     extract_and_verify_bundle,
+    load_challenge_profile,
     load_profile,
+    prepare_one_click_challenge_handoff,
     prepare_one_click_handoff,
     run_one_click_batch,
     validate_one_click_result,
@@ -57,20 +62,36 @@ class SyntheticKleinBackend:
         }
 
     def generate(self, job, references):
-        if references:
-            raise ValueError("References must be empty for character reference generation")
         self.calls.append((job["kind"], job["id"], job["seed"]))
         if job["id"] == self.fail_id:
             raise RuntimeError("Synthetic Klein inference failure")
-        prompt = effective_reference_prompt(job)
-        return Image.new("RGB", job["size"], "#8ab4f8"), {
+        if job["kind"] == "character":
+            if references:
+                raise ValueError("References must be empty for character reference generation")
+            prompt = effective_reference_prompt(job)
+            return Image.new("RGB", job["size"], "#8ab4f8"), {
+                **self.provenance,
+                "conditioning": "text_only",
+                "effective_prompt": prompt,
+                "prompt_token_count": 120,
+                "inference_steps": 4,
+                "guidance_scale": 1.0,
+                "peak_cuda_allocated_GiB": 12.5,
+            }
+        if not references:
+            raise ValueError("Scene generation requires approved character references")
+        layout = reference_layout(references)
+        prompt = effective_scene_prompt(job, layout)
+        return Image.new("RGB", job["size"], "#66bb6a"), {
             **self.provenance,
-            "conditioning": "text_only",
+            "conditioning": CONDITIONING_REVISION,
+            "conditioning_layout": layout,
+            "reference_conditioning_mode": "flux2_klein_multi_reference_images",
             "effective_prompt": prompt,
-            "prompt_token_count": 120,
+            "prompt_token_count": 180,
             "inference_steps": 4,
             "guidance_scale": 1.0,
-            "peak_cuda_allocated_GiB": 12.5,
+            "peak_cuda_allocated_GiB": 13.2,
         }
 
 
@@ -317,6 +338,203 @@ class OneClickGenerationTests(unittest.TestCase):
         self.assertTrue(Path(downloads[0]).is_file())
         self.assertEqual(len(displayed), 3)  # 1 contact sheet + 2 character images
         self.assertEqual([c[1] for c in synthetic_backend.calls], ["hare", "tortoise"])
+
+    def test_challenge_only_one_click_reuses_approved_references_without_regenerating_them(self):
+        challenge_profile, _, challenge_profile_sha = load_challenge_profile()
+        validate_profile(challenge_profile)
+        self.assertEqual(challenge_profile["mode"], "challenge_scene")
+        self.assertEqual(challenge_profile["max_new_images"], 1)
+        self.assertEqual(set(challenge_profile["scenes"]), {"challenge"})
+
+        # Build an isolated library with approved hare and tortoise references:
+        store = AssetStore(self.root / "approved_library")
+        for identity, color in (("hare", "white"), ("tortoise", "green")):
+            img_path = self.root / f"ref_{identity}.png"
+            Image.new("RGB", (1024, 1024), color).save(img_path)
+            asset_id = store.import_image(img_path, "character", identity, {
+                "model_id": challenge_profile["model_id"],
+                "model_revision": challenge_profile["model_revision"],
+                "model_license": challenge_profile["model_license"],
+                "reference_spec_revision": "reference_flux_klein_v4",
+            })
+            store.approve(asset_id)
+
+        handoff = prepare_one_click_challenge_handoff(self.root / "challenge_handoff", asset_dir=store.root)
+        self.assertEqual(handoff["scene_ids"], ["challenge"])
+        self.assertEqual(handoff["approved_reference_ids"], ["hare", "tortoise"])
+        self.assertEqual(handoff["reference_count"], 2)
+
+        bundle_info = extract_and_verify_bundle(
+            handoff["package_path"],
+            self.root / "challenge_bundles",
+            expected_package_sha256=handoff["package_sha256"],
+        )
+        self.assertEqual([s["id"] for s in bundle_info["request"]["scenes"]], ["challenge"])
+        self.assertFalse(bundle_info["request"]["generation_policy"]["reference_only"])
+        self.assertFalse(bundle_info["request"]["generation_policy"]["full_batch_enabled"])
+
+        backend = SyntheticKleinBackend(challenge_profile)
+        loads = 0
+
+        def factory(settings, previous):
+            nonlocal loads
+            loads += 1
+            return backend
+
+        work_root = self.root / "challenge_colab_temp"
+        result = run_one_click_batch(bundle_info["bundle_dir"], work_root, backend_factory=factory)
+        self.assertEqual(loads, 1)
+        # Only the challenge scene is generated; character references are reused, never regenerated:
+        self.assertEqual(backend.calls, [("scene", "challenge", scene_seed("challenge", 20261126))])
+        self.assertEqual(result["preflight"]["new_images"], [{"kind": "scene", "id": "challenge"}])
+        self.assertEqual(
+            [r["id"] for r in result["preflight"]["reused_images"]],
+            ["hare", "tortoise"],
+        )
+        self.assertTrue(all(r["approval"] == "approved" for r in result["preflight"]["reused_images"]))
+        self.assertEqual(result["validation"]["status"], "complete")
+        self.assertEqual(result["validation"]["completed_scene_ids"], ["challenge"])
+        self.assertEqual(result["validation"]["missing_scene_ids"], [])
+        self.assertEqual(validate_result(result["manifest_path"])["completed_scene_ids"], ["challenge"])
+
+        scene_asset = next(a for a in result["outcome"]["assets"] if a["kind"] == "scene")
+        self.assertEqual(scene_asset["target_id"], "challenge")
+        self.assertEqual(scene_asset["metadata"]["resolution"], [1024, 576])
+        self.assertFalse(scene_asset["metadata"]["experimental_preview"])
+        self.assertEqual(set(scene_asset["metadata"]["references"]), {"hare", "tortoise"})
+
+        # Also test FluxKleinBackend.generate directly for a scene job with multi-reference images:
+        real_backend = FluxKleinBackend.__new__(FluxKleinBackend)
+        real_backend.settings = BatchSettings(family="flux2_klein", steps=4, base_seed=20261126, reference_size=1024)
+        real_backend.profile = challenge_profile
+        real_backend.provenance = {
+            "model_id": challenge_profile["model_id"],
+            "model_revision": challenge_profile["model_revision"],
+            "model_license": challenge_profile["model_license"],
+            "license_url": challenge_profile["license_url"],
+            "negative_prompt_mode": challenge_profile["negative_prompt_mode"],
+        }
+        real_backend.torch = MagicMock()
+        real_backend.torch.cuda.max_memory_allocated.return_value = 9 * 2**30
+        real_backend.pipe = MagicMock()
+        real_backend.pipe.tokenizer.apply_chat_template.return_value = "templated scene prompt"
+        real_backend.pipe.tokenizer.return_value = {"input_ids": list(range(140))}
+        real_backend.pipe.return_value = SimpleNamespace(images=[Image.new("RGB", (1024, 576), "green")])
+
+        refs = {
+            "tortoise": Image.new("RGB", (768, 768), "green"),
+            "hare": Image.new("RGB", (768, 768), "white"),
+        }
+        scene_job = {
+            "kind": "scene",
+            "id": "challenge",
+            "prompt": bundle_info["request"]["scenes"][0]["prompt"],
+            "negative_prompt": bundle_info["request"]["scenes"][0]["negative_prompt"],
+            "seed": scene_seed("challenge", 20261126),
+            "size": (1024, 576),
+        }
+        out_img, out_meta = real_backend.generate(scene_job, refs)
+        self.assertEqual(out_img.size, (1024, 576))
+        self.assertEqual(out_meta["conditioning"], CONDITIONING_REVISION)
+        self.assertEqual(out_meta["conditioning_layout"]["reference_order"], ["hare", "tortoise"])
+        pipe_kwargs = real_backend.pipe.call_args.kwargs
+        self.assertEqual(pipe_kwargs["image"], [refs["hare"], refs["tortoise"]])
+        self.assertEqual(pipe_kwargs["width"], 1024)
+        self.assertEqual(pipe_kwargs["height"], 576)
+
+    def test_one_click_challenge_notebook_structure_and_simulated_execution(self):
+        notebook_path = ROOT / "notebooks/one_click_challenge_scene.ipynb"
+        self.assertTrue(notebook_path.is_file())
+        nb = json.loads(notebook_path.read_text(encoding="utf-8"))
+        self.assertEqual(nb["nbformat"], 4)
+        code_cells = [c for c in nb["cells"] if c["cell_type"] == "code"]
+        self.assertEqual(len(code_cells), 5)
+
+        assignments = {}
+        for idx, cell in enumerate(code_cells, start=1):
+            self.assertIsNone(cell["execution_count"])
+            self.assertEqual(cell["outputs"], [])
+            source = "".join(cell["source"])
+            compile(source, f"one_click_challenge_cell_{idx}", "exec")
+            self.assertTrue(source.lstrip().startswith(f"# {idx}."))
+            for statement in ast.parse(source).body:
+                if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
+                    try:
+                        assignments[statement.targets[0].id] = ast.literal_eval(statement.value)
+                    except (ValueError, TypeError):
+                        pass
+
+        self.assertFalse(assignments["USE_GOOGLE_DRIVE"])
+        self.assertEqual(
+            assignments["EXPECTED_PACKAGE_SHA256"],
+            file_hash(ROOT / f"examples/{DEFAULT_CHALLENGE_PACKAGE_NAME}.zip"),
+        )
+
+        fake_torch = ModuleType("torch")
+        fake_torch.cuda = SimpleNamespace(
+            is_available=lambda: True,
+            get_device_capability=lambda idx: (8, 9),
+            get_device_properties=lambda idx: SimpleNamespace(total_memory=int(22.5 * 2**30)),
+            get_device_name=lambda idx: "NVIDIA L4",
+        )
+        downloads = []
+        displayed = []
+        fake_colab = ModuleType("google.colab")
+        fake_colab.files = SimpleNamespace(download=lambda path: downloads.append(path))
+        fake_colab.drive = SimpleNamespace(mount=lambda path: (_ for _ in ()).throw(AssertionError("Drive must not mount by default")))
+        fake_google = ModuleType("google")
+        fake_google.colab = fake_colab
+        fake_ipython_display = ModuleType("IPython.display")
+        fake_ipython_display.display = lambda obj: displayed.append(obj)
+
+        work_dir = self.root / "challenge_notebook_sim"
+        env = {}
+        c1 = "".join(code_cells[0]["source"]).replace('PERSISTENT_DIR = ""', f'PERSISTENT_DIR = {json.dumps(str(work_dir))}')
+        c2 = "".join(code_cells[1]["source"]).replace(
+            'meminfo = Path("/proc/meminfo")',
+            'meminfo = WORK_ROOT / "fake_meminfo"\nmeminfo.write_text("MemTotal: 52428800 kB\\n")',
+        )
+        c3 = "".join(code_cells[2]["source"])
+        c4 = "".join(code_cells[3]["source"])
+        c5 = "".join(code_cells[4]["source"])
+
+        req_pins = {
+            "diffusers": "0.37.1",
+            "transformers": "4.57.6",
+            "accelerate": "1.12.0",
+            "huggingface-hub": "0.36.2",
+            "safetensors": "0.7.0",
+            "Pillow": "12.1.1",
+        }
+        challenge_profile, _, _ = load_challenge_profile()
+        synthetic_backend = SyntheticKleinBackend(challenge_profile)
+
+        prev_sys_path = list(sys.path)
+        prev_src_modules = {k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}
+        try:
+            with patch.dict(sys.modules, {
+                "torch": fake_torch,
+                "google": fake_google,
+                "google.colab": fake_colab,
+                "IPython.display": fake_ipython_display,
+            }), patch("urllib.request.urlopen", side_effect=OSError("offline test uses embedded fallback")), \
+                    patch("importlib.metadata.version", side_effect=lambda pkg: req_pins[pkg]):
+                exec(compile(c1, "cell1", "exec"), env)
+                exec(compile(c2, "cell2", "exec"), env)
+                exec(compile(c3, "cell3", "exec"), env)
+                exec(compile(c4, "cell4", "exec"), env)
+                with patch("src.modern_images.FluxKleinBackend", return_value=synthetic_backend):
+                    exec(compile(c5, "cell5", "exec"), env)
+        finally:
+            sys.path[:] = prev_sys_path
+            for k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
+                sys.modules.pop(k, None)
+            sys.modules.update(prev_src_modules)
+
+        self.assertEqual(len(downloads), 1)
+        self.assertTrue(Path(downloads[0]).is_file())
+        self.assertEqual(len(displayed), 2)  # 1 contact sheet + 1 generated challenge scene image
+        self.assertEqual(synthetic_backend.calls, [("scene", "challenge", scene_seed("challenge", 20261126))])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "mode": "challenge_scene",
+  "revision": "challenge_scene_flux_klein_v4",
+  "model_id": "black-forest-labs/FLUX.2-klein-4B",
+  "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+  "model_license": "apache-2.0",
+  "license_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+  "max_new_images": 1,
+  "min_vram_gib": 22,
+  "min_ram_gib": 24,
+  "min_disk_gib": 24,
+  "settings": {"family": "flux2_klein", "steps": 4, "base_seed": 20261126, "reference_size": 1024},
+  "guidance_scale": 1.0,
+  "dtype": "bfloat16",
+  "negative_prompt_mode": "inline_instruction_constraints_no_cfg",
+  "shared_style": "A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, warm sunny outdoor forest lighting and natural ground shadows. One unified wide cinematic 16:9 frame, no text, no watermark.",
+  "scenes": {
+    "challenge": {
+      "subject": "Exactly two animals together at a sunny outdoor forest-meadow race starting line across one dirt path: on the left stands the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts); on the right stands the friendly green tortoise with fresh leaf-green skin, four legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes. Both characters face toward the race path ready to begin their friendly race in a colorful sunny meadow with wildflowers and green trees.",
+      "negative_prompt": "extra animals, duplicate rabbit, duplicate tortoise, three animals, multiple views, split panels, colored panels, collage, triptych, character sheet, lineup, bow tie, shorts, trousers, green shell, olive shell, gray skin, pedestal, text, title, letters, numbers, watermark, logo"
+    }
+  }
+}

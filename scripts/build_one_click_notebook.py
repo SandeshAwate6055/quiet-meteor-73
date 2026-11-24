@@ -1,4 +1,5 @@
-"""Build notebooks/one_click_generation.ipynb and its pinned one-click handoff ZIP.
+"""Build notebooks/one_click_generation.ipynb, notebooks/one_click_challenge_scene.ipynb,
+and their pinned one-click handoff ZIPs.
 
 Writes notebook JSON only; never imports GPU packages or executes model inference.
 """
@@ -7,19 +8,22 @@ import json
 from pathlib import Path
 import textwrap
 
-from src.one_click import DEFAULT_PACKAGE_NAME, prepare_one_click_handoff
+from src.one_click import (
+    DEFAULT_CHALLENGE_PACKAGE_NAME,
+    DEFAULT_PACKAGE_NAME,
+    prepare_one_click_challenge_handoff,
+    prepare_one_click_handoff,
+)
 from src.production_state import file_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_RAW_BASE = "https://raw.githubusercontent.com/SandeshAwate6055/quiet-meteor-73/master"
 
 
-def build():
-    handoff = prepare_one_click_handoff(ROOT / "examples", name=DEFAULT_PACKAGE_NAME, overwrite=True)
+def _write_notebook(notebook_filename, title, description_lines, package_name, handoff, profile, cell5_header):
     package_path = Path(handoff["package_path"])
     package_sha256 = file_hash(package_path)
     package_b64 = base64.b64encode(package_path.read_bytes()).decode("ascii")
-    profile = json.loads((ROOT / "configs/one_click_generation.json").read_text(encoding="utf-8"))
 
     cells = []
 
@@ -35,20 +39,20 @@ def build():
         cells.append(cell)
 
     add("markdown", f"""
-    # AI Kids Story Studio — One-Click Character Reference Generation (v4)
+    # {title}
 
     **How to run (One Click):**
     1. In Google Colab, select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM** enabled).
     2. Click **Runtime > Run all**.
-    3. Wait for automatic hardware check, dependency setup, generation of the **two** character reference images (`hare` and `tortoise`), visual preview, and automatic result ZIP download.
+    3. {description_lines['step3']}
 
     ---
     ### Storage & Runtime Notes
     - **Temporary storage by default:** Results, caches, and exports are stored in `/content/story_one_click` inside the Colab VM and **are permanently lost when the Colab runtime disconnects**. The result ZIP download triggers automatically at the end of execution.
     - **Optional persistent storage / resume:** No Google Drive authentication is required. If you want persistent Drive storage or cross-session resume, set `USE_GOOGLE_DRIVE = True` (or provide a custom `PERSISTENT_DIR`) in Cell 1 before running.
     - **Strict budget & cost protection:**
-      - Generates **at most 2 character reference images** (`hare` and `tortoise`) at `1024x1024` in 4 distilled steps.
-      - Zero scene generation, zero animation, zero automatic GPU retries, and no repeat model loads within the same runtime.
+      - {description_lines['budget']}
+      - Zero animation, zero automatic GPU retries, and no repeat model loads within the same runtime.
       - Checks CUDA, BF16 capability, VRAM (>= {profile['min_vram_gib']} GiB), host RAM (>= {profile['min_ram_gib']} GiB), and free disk (>= {profile['min_disk_gib']} GiB) **before** installing packages or downloading weights.
     - **Model & License:**
       - Model: [`{profile['model_id']}`](https://huggingface.co/{profile['model_id']}) (pinned commit `{profile['model_revision']}`).
@@ -66,7 +70,7 @@ def build():
     EXPECTED_PACKAGE_SHA256 = "{package_sha256}"
     EXPECTED_REQUEST_SHA256 = "{handoff['request_sha256']}"
     EXPECTED_PROFILE_SHA256 = "{handoff['profile_sha256']}"
-    REMOTE_PACKAGE_URL = "{REPO_RAW_BASE}/examples/{DEFAULT_PACKAGE_NAME}.zip"
+    REMOTE_PACKAGE_URL = "{REPO_RAW_BASE}/examples/{package_name}.zip"
     MIN_VRAM_GIB = {profile['min_vram_gib']}
     MIN_RAM_GIB = {profile['min_ram_gib']}
     MIN_DISK_GIB = {profile['min_disk_gib']}
@@ -117,7 +121,7 @@ def build():
     from pathlib import Path
 
     EMBEDDED_PACKAGE_B64 = "{package_b64}"
-    package_path = WORK_ROOT / "{DEFAULT_PACKAGE_NAME}_{package_sha256[:12]}.zip"
+    package_path = WORK_ROOT / "{package_name}_{package_sha256[:12]}.zip"
 
     if not package_path.exists() or hashlib.sha256(package_path.read_bytes()).hexdigest() != EXPECTED_PACKAGE_SHA256:
         payload = None
@@ -203,8 +207,8 @@ def build():
         print("All pinned dependencies already installed.")
     """)
 
-    add("code", """
-    # 5. Load model once, generate the 2 character reference candidates (Hare & Tortoise), display & auto-download ZIP.
+    add("code", f"""
+    # 5. {cell5_header}
     import json
     from IPython.display import display
     from PIL import Image
@@ -242,10 +246,12 @@ def build():
 
     for asset in run_result["outcome"]["assets"]:
         img_path = run_result["result_dir"] / asset["file"]
-        print(f"Candidate {asset['kind']}/{asset['target_id']} | seed={asset['metadata']['seed']} | sha256={asset['sha256'][:16]}:")
-        with Image.open(img_path) as cand_img:
-            cand_img.load()
-            display(cand_img)
+        status_tag = "REUSED APPROVED REFERENCE" if asset["metadata"].get("reused_reference") else f"GENERATED CANDIDATE (seed={{asset['metadata'].get('seed')}})"
+        print(f"{{asset['kind']}}/{{asset['target_id']}} | {{status_tag}} | sha256={{asset['sha256'][:16]}}:")
+        if not asset["metadata"].get("reused_reference"):
+            with Image.open(img_path) as cand_img:
+                cand_img.load()
+                display(cand_img)
 
     print("Exported result ZIP:", run_result["archive_path"], "| SHA256:", run_result["archive_sha256"])
     files.download(str(run_result["archive_path"]))
@@ -259,10 +265,10 @@ def build():
         "metadata": {
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
             "language_info": {"name": "python"},
-            "colab": {"name": "one_click_generation.ipynb", "gpuType": "L4", "machine_shape": "hm"},
+            "colab": {"name": notebook_filename, "gpuType": "L4", "machine_shape": "hm"},
         },
     }
-    notebook_path = ROOT / "notebooks/one_click_generation.ipynb"
+    notebook_path = ROOT / "notebooks" / notebook_filename
     notebook_path.write_text(json.dumps(notebook, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n")
     return {
         "notebook_path": str(notebook_path),
@@ -271,6 +277,46 @@ def build():
         "request_sha256": handoff["request_sha256"],
         "profile_sha256": handoff["profile_sha256"],
     }
+
+
+def build_references():
+    handoff = prepare_one_click_handoff(ROOT / "examples", name=DEFAULT_PACKAGE_NAME, overwrite=True)
+    profile = json.loads((ROOT / "configs/one_click_generation.json").read_text(encoding="utf-8"))
+    return _write_notebook(
+        "one_click_generation.ipynb",
+        "AI Kids Story Studio — One-Click Character Reference Generation (v4)",
+        {
+            "step3": "Wait for automatic hardware check, dependency setup, generation of the **two** character reference images (`hare` and `tortoise`), visual preview, and automatic result ZIP download.",
+            "budget": "Generates **at most 2 character reference images** (`hare` and `tortoise`) at `1024x1024` in 4 distilled steps. Zero scene generation.",
+        },
+        DEFAULT_PACKAGE_NAME,
+        handoff,
+        profile,
+        "Load model once, generate the 2 character reference candidates (Hare & Tortoise), display & auto-download ZIP.",
+    )
+
+
+def build_challenge():
+    handoff = prepare_one_click_challenge_handoff(ROOT / "examples", name=DEFAULT_CHALLENGE_PACKAGE_NAME, overwrite=True)
+    profile = json.loads((ROOT / "configs/one_click_challenge_scene.json").read_text(encoding="utf-8"))
+    return _write_notebook(
+        "one_click_challenge_scene.ipynb",
+        "AI Kids Story Studio — One-Click First Scene Generation: `challenge` (v4)",
+        {
+            "step3": "Wait for automatic hardware check, dependency setup, reuse of the **approved** `hare` and `tortoise` references, generation of **only** the `challenge` scene (`1024x576`), visual preview, and automatic result ZIP download.",
+            "budget": "Reuses the 2 approved character references (`hare` and `tortoise`, 0 reference regenerations) and generates **at most 1 scene image** (`challenge`) at `1024x576` in 4 distilled steps. Remaining scenes are not scheduled.",
+        },
+        DEFAULT_CHALLENGE_PACKAGE_NAME,
+        handoff,
+        profile,
+        "Load model once, reuse approved Hare & Tortoise references, generate ONLY the 'challenge' scene, display & auto-download ZIP.",
+    )
+
+
+def build():
+    ref_result = build_references()
+    challenge_result = build_challenge()
+    return {**ref_result, "challenge": challenge_result}
 
 
 if __name__ == "__main__":

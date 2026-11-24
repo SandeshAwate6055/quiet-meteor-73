@@ -115,13 +115,13 @@ def validate_result(manifest_path, expected_request_hash=None):
         metadata = row.get("metadata")
         if not isinstance(metadata, dict):
             raise ValueError("Result metadata must be an object")
-        if profile and (metadata.get("model_id") != profile["model_id"] or
-                        metadata.get("model_revision") != profile["model_revision"] or
-                        metadata.get("model_license") != profile["model_license"]):
-            raise ValueError("Result model provenance differs from its pinned generation profile")
         # Reused references retain original provenance; generated images require
         # full prompt/model/seed/timing metadata, including reference provenance.
         if not metadata.get("reused_reference"):
+            if profile and (metadata.get("model_id") != profile["model_id"] or
+                            metadata.get("model_revision") != profile["model_revision"] or
+                            metadata.get("model_license") != profile["model_license"]):
+                raise ValueError("Result model provenance differs from its pinned generation profile")
             for key in ("prompt", "seed", "model_id", "model_revision", "resolution", "runtime_seconds", "conditioning"):
                 if key not in metadata:
                     raise ValueError(f"Missing generation metadata: {key}")
