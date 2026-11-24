@@ -20,6 +20,7 @@ from src.one_click import (
     prepare_one_click_remaining_scenes_handoff,
 )
 from src.one_click_video import (
+    DEFAULT_EPISODE_I2V_PACKAGE_NAME,
     DEFAULT_I2V_TEST_PACKAGE_NAME,
     prepare_one_click_i2v_handoff,
 )
@@ -427,13 +428,15 @@ def build_episode_corrections():
     )
 
 
-def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile):
+def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile, *, gpu_type="L4"):
     package_path = Path(handoff["package_path"])
     package_sha256 = handoff["package_sha256"]
     rel_package = f"examples/{package_name}.zip"
     commit = _package_commit(rel_package)
     immutable_url = f"{REPO_RAW_BASE}/{commit}/{rel_package}"
     branch_url = f"{REPO_RAW_BASE}/master/{rel_package}"
+    count = len(handoff["scene_ids"])
+    scenes_list = ", ".join(f"`{s}`" for s in handoff["scene_ids"])
 
     cells = []
 
@@ -452,15 +455,15 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
     # {title}
 
     **How to run (One Click):**
-    1. In Google Colab, select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM** enabled).
+    1. In Google Colab, select **Runtime > Change runtime type > {gpu_type} GPU** (with **High-RAM** enabled).
     2. Click **Runtime > Run all**.
-    3. Wait for automatic hardware check, dependency setup, generation of **1 test I2V MP4 clip** (`hare_sprints`, `832x480`, `81` frames @ `16` fps), and automatic result ZIP download.
+    3. Wait for automatic hardware check, dependency setup, generation of **{count} I2V MP4 clip(s)** ({scenes_list} at `832x480`, `81` frames @ `16` fps), and automatic result ZIP download.
 
     ---
     ### Budget & License Guardrails
-    - **Strict 1-clip test budget:** Generates **at most {profile['max_new_clips']} clip** (`{', '.join(handoff['scene_ids'])}`), with zero automatic retries and no repeat model loads.
+    - **Strict {profile['max_new_clips']}-clip budget:** Generates **at most {profile['max_new_clips']} clip(s)** ({scenes_list}), loading the model once, with zero automatic retries, resumable clip outputs if persistent storage is enabled, and automatic partial ZIP export if a later clip fails.
     - **Model & License:** [`{profile['model_id']}`](https://huggingface.co/{profile['model_id']}) (pinned commit `{profile['model_revision']}`), **{profile['model_license']}** ([View LICENSE.txt]({profile['license_url']})). Ungated public weights.
-    - **Candidate status:** The generated MP4 is an **unapproved candidate** until inspected and explicitly approved locally via `AssetStore`.
+    - **Candidate status:** Generated MP4s are **unapproved candidates** until inspected and explicitly approved locally via `AssetStore`.
     """)
 
     add("code", f"""
@@ -627,7 +630,7 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
         _ONE_CLICK_I2V_BACKEND = WanI2VBackend(worker_settings, PROFILE, CACHE_DIR, previous)
         return _ONE_CLICK_I2V_BACKEND
 
-    run_result = run_one_click_i2v_batch(BUNDLE_DIR, WORK_ROOT, backend_factory=get_backend, cache_dir=CACHE_DIR)
+    run_result = run_one_click_i2v_batch(BUNDLE_DIR, WORK_ROOT, backend_factory=get_backend, cache_dir=CACHE_DIR, allow_partial=True)
     print("I2V batch outcome:", json.dumps(run_result["outcome"], indent=2))
     for asset in run_result["outcome"]["assets"]:
         clip_path = run_result["result_dir"] / asset["file"]
@@ -636,6 +639,8 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
 
     print("Exported result ZIP:", run_result["archive_path"], "| SHA256:", run_result["archive_sha256"])
     files.download(str(run_result["archive_path"]))
+    if run_result["outcome"].get("status") != "complete":
+        raise RuntimeError(f"I2V batch did not complete ({run_result['outcome'].get('status')}): {run_result['outcome'].get('errors')}")
     """)
 
     notebook = {
@@ -645,7 +650,7 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
         "metadata": {
             "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
             "language_info": {"name": "python"},
-            "colab": {"name": notebook_filename, "gpuType": "L4", "machine_shape": "hm"},
+            "colab": {"name": notebook_filename, "gpuType": gpu_type, "machine_shape": "hm"},
         },
     }
     notebook_path = ROOT / "notebooks" / notebook_filename
@@ -671,15 +676,35 @@ def build_i2v_test():
     )
 
 
+def build_episode_animation():
+    handoff = prepare_one_click_i2v_handoff(
+        ROOT / "examples",
+        name=DEFAULT_EPISODE_I2V_PACKAGE_NAME,
+        profile_path=ROOT / "configs/one_click_episode_animation.json",
+        overwrite=True,
+    )
+    profile = json.loads((ROOT / "configs/one_click_episode_animation.json").read_text(encoding="utf-8"))
+    return _write_i2v_notebook(
+        "one_click_episode_animation.ipynb",
+        "AI Kids Story Studio — One-Click Episode 1 Animation Batch (8 Action Shots, Wan2.2-TI2V-5B)",
+        DEFAULT_EPISODE_I2V_PACKAGE_NAME,
+        handoff,
+        profile,
+        gpu_type="A100",
+    )
+
+
 def build():
     ref_result = build_references()
-    corrections_result = build_episode_corrections()
     i2v_test_result = build_i2v_test()
+    episode_i2v_result = build_episode_animation()
     result = {
         **ref_result,
-        "episode_corrections": corrections_result,
         "i2v_test": i2v_test_result,
+        "episode_animation": episode_i2v_result,
     }
+    if not (ROOT / "notebooks/one_click_episode_corrections.ipynb").exists():
+        result["episode_corrections"] = build_episode_corrections()
     if not (ROOT / "notebooks/one_click_episode_scenes.ipynb").exists():
         result["episode_scenes"] = build_episode_scenes()
     if not (ROOT / "notebooks/one_click_challenge_scene.ipynb").exists():

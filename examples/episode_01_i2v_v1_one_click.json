@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "kind": "i2v_clips",
+  "batch_id": "episode_01_i2v_v1_one_click_d58fe593",
+  "model_id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+  "model_revision": "b8fff7315c768468a5333511427288870b2e9635",
+  "model_license": "apache-2.0",
+  "max_new_clips": 8,
+  "scenes": [
+    {
+      "target_id": "hook_blur",
+      "keyframe_file": "keyframes/hook_blur.png",
+      "keyframe_sha256": "0807e7539facd0bd8e4b41dd81e83ab0e8ad515fca240787fb6c038609aa10d7",
+      "source_asset_id": "scene_hook_blur_0807e7539facd0bd8e4b41dd81e83ab0e8ad515fca240787fb6c038609aa10d7",
+      "prompt": "Smooth 3D children's cartoon animation preserving the exact white rabbit in the royal-blue sleeveless vest from the input image: the rabbit sprints joyfully forward along the sunny forest dirt path, ears streaming back, paws kicking up tiny dust puffs, flower petals swirling gently in the warm sunlight.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, disappearing vest, changing vest color, text, watermark, blurry, static frozen frame, jerky camera, deformed anatomy",
+      "seed": 20261129
+    },
+    {
+      "target_id": "crossroads_greeting",
+      "keyframe_file": "keyframes/crossroads_greeting.png",
+      "keyframe_sha256": "0aa7c8db70bbd057d69a21a2b4563573ce79a45931db0dc143be14096e4a01f8",
+      "source_asset_id": "scene_crossroads_greeting_0aa7c8db70bbd057d69a21a2b4563573ce79a45931db0dc143be14096e4a01f8",
+      "prompt": "Smooth 3D children's cartoon animation preserving both characters from the input image: on the left the white rabbit in the royal-blue sleeveless vest shifts weight playfully with a cheerful grin and gentle ear bounce; on the right the green tortoise with the chocolate-brown dome shell nods warmly and smiles.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, duplicate tortoise, disappearing vest, swapping positions, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261130
+    },
+    {
+      "target_id": "go_signal",
+      "keyframe_file": "keyframes/go_signal.png",
+      "keyframe_sha256": "b9acaa720442e633927d3bb7b3ba193af7ce142aa68c28f9967dee22de4aa972",
+      "source_asset_id": "scene_go_signal_b9acaa720442e633927d3bb7b3ba193af7ce142aa68c28f9967dee22de4aa972",
+      "prompt": "Smooth 3D children's cartoon animation preserving both characters from the input image: on the left the white rabbit in the royal-blue sleeveless vest springs forward from his crouch in a small puff of dust; on the right the green tortoise with the chocolate-brown dome shell takes a steady forward step.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, duplicate tortoise, disappearing vest, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261131
+    },
+    {
+      "target_id": "stone_slip",
+      "keyframe_file": "keyframes/stone_slip.png",
+      "keyframe_sha256": "55a41112910c6b93e867b644a3b7e8b63abcab4784e55f8a01bcac6ca292d8bb",
+      "source_asset_id": "scene_stone_slip_55a41112910c6b93e867b644a3b7e8b63abcab4784e55f8a01bcac6ca292d8bb",
+      "prompt": "Smooth 3D children's cartoon animation preserving the exact green tortoise with the chocolate-brown dome shell from the input image: the tortoise wobbles gently on the wet mossy stepping stone with a startled expression while sparkling stream water ripples and splashes softly around her feet.",
+      "negative_prompt": "rabbit, hare, morphing face, extra limbs, duplicate tortoise, changing shell color, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261132
+    },
+    {
+      "target_id": "hare_sprints",
+      "keyframe_file": "keyframes/hare_sprints.png",
+      "keyframe_sha256": "7d45ca6d73195a8015ca1ff0f5745ee11f15e7a6757fbac7594d139767a2f45e",
+      "source_asset_id": "scene_hare_sprints_7d45ca6d73195a8015ca1ff0f5745ee11f15e7a6757fbac7594d139767a2f45e",
+      "prompt": "Smooth 3D children's cartoon animation preserving the exact white rabbit in the royal-blue sleeveless vest from the input image: the rabbit runs energetically down the sunny forest dirt trail, ears flying back, dappled golden afternoon light and gently swaying leaves.",
+      "negative_prompt": "tortoise, morphing face, extra limbs, duplicate rabbit, disappearing vest, changing vest color, text, watermark, blurry, static frozen frame, jerky camera, deformed anatomy",
+      "seed": 20261133
+    },
+    {
+      "target_id": "hare_helps",
+      "keyframe_file": "keyframes/hare_helps.png",
+      "keyframe_sha256": "8000292540df626d675ececbebe0450898adedb7af77358265e81763ee448443",
+      "source_asset_id": "scene_hare_helps_8000292540df626d675ececbebe0450898adedb7af77358265e81763ee448443",
+      "prompt": "Smooth 3D children's cartoon animation preserving both characters from the input image: on the left the white rabbit in the royal-blue sleeveless vest leans forward kindly on the bank steadying the flat stepping stone and reaching out a paw; on the right the green tortoise looks up hopefully as water ripples softly.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, duplicate tortoise, disappearing vest, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261134
+    },
+    {
+      "target_id": "crossing_together",
+      "keyframe_file": "keyframes/crossing_together.png",
+      "keyframe_sha256": "30b47a1f6b8ca1a612ce725815c0e3a09a312ab3ccd5947fc012138413f20060",
+      "source_asset_id": "scene_crossing_together_30b47a1f6b8ca1a612ce725815c0e3a09a312ab3ccd5947fc012138413f20060",
+      "prompt": "Smooth 3D children's cartoon animation preserving both characters from the input image: on the right the green tortoise with the chocolate-brown dome shell walks steadily across the flat stones in the sparkling stream while on the left the white rabbit in the royal-blue sleeveless vest walks beside her, gently steadying her.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, duplicate tortoise, disappearing vest, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261135
+    },
+    {
+      "target_id": "crossing_finish",
+      "keyframe_file": "keyframes/crossing_finish.png",
+      "keyframe_sha256": "39705650132c5260d422149ca1267237c2ae3de33b097a42b67857cc74b2cc2c",
+      "source_asset_id": "scene_crossing_finish_39705650132c5260d422149ca1267237c2ae3de33b097a42b67857cc74b2cc2c",
+      "prompt": "Smooth 3D children's cartoon animation preserving both characters from the input image: on the right the green tortoise with the chocolate-brown dome shell steps forward across the white chalk finish line beneath the oak tree; on the left the white rabbit in the royal-blue sleeveless vest jumps and claps joyfully cheering for her.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, duplicate tortoise, disappearing vest, ribbon through body, text, watermark, blurry, static frozen frame, deformed anatomy",
+      "seed": 20261136
+    }
+  ]
+}

@@ -30,8 +30,8 @@ def load_settings(path: Path | None):
         raise ValueError("target_duration must be null or 0 < seconds <= 3600")
     if settings["language"] not in ("en", "en-US", "en-GB"):
         raise ValueError("Current offline voice adapter supports English scripts only (en/en-US/en-GB); translation and other voices need a future provider")
-    if settings["animation"] != "zoom_pan":
-        raise ValueError("Only zoom_pan animation is implemented")
+    if settings["animation"] not in ("zoom_pan", "hybrid"):
+        raise ValueError("Animation mode must be 'zoom_pan' or 'hybrid'")
     window = settings["duration_range"]
     if window is not None and (not isinstance(window, list) or len(window) != 2 or
             any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in window) or not 0 < window[0] < window[1] <= 3600):

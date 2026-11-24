@@ -6,7 +6,7 @@ from .asset_store import AssetStore
 from .image_providers import FileImageProvider, compose_illustration
 from .media import find_tool, validate_video
 from .production_plan import SIZES
-from .production_providers import FFmpegAnimation, FFmpegFinalVideo, OfflineVoice
+from .production_providers import HybridAnimation, FFmpegFinalVideo, OfflineVoice
 from .production_state import file_hash, write_json
 from .schema import Story, load_story
 
@@ -54,7 +54,7 @@ def render_short(story_path: Path, short_id: str, output_dir: Path, *,
     store = AssetStore(asset_dir)
     images = FileImageProvider(store)
     voice = voice or OfflineVoice()
-    animation = FFmpegAnimation(ffmpeg)
+    animation = HybridAnimation(ffmpeg, store)
     renderer = FFmpegFinalVideo(ffmpeg, ffprobe)
 
     out = Path(output_dir).resolve()
@@ -75,10 +75,11 @@ def render_short(story_path: Path, short_id: str, output_dir: Path, *,
             images.render(scene, story.title, idx, len(spec["shots"]), img_path, size)
         clip_path = out / "clips" / f"{idx:02d}_{sid}.mp4"
         clip_path.parent.mkdir(parents=True, exist_ok=True)
-        actual = animation.animate(img_path, narration.path, clip_path, duration, size, pipeline, scene.motion)
+        actual = animation.animate(img_path, narration.path, clip_path, duration, size, pipeline, scene.motion, scene_id=sid)
         clips.append(clip_path)
         total += actual
-        shot_records.append({"id": sid, "duration": actual, "provider": selection["provider"], "motion": scene.motion})
+        mode = "i2v_clip" if animation.clip_cache_key(sid) != "camera_only" else "camera_only"
+        shot_records.append({"id": sid, "duration": actual, "provider": selection["provider"], "motion": scene.motion, "animation_mode": mode})
 
     final_path = out / f"{short_id}.mp4"
     validation = renderer.assemble(clips, final_path, size, total)

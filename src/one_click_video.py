@@ -12,6 +12,7 @@ from .production_state import file_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_I2V_TEST_PACKAGE_NAME = "i2v_hare_sprints_v1_one_click"
+DEFAULT_EPISODE_I2V_PACKAGE_NAME = "episode_01_i2v_v1_one_click"
 I2V_WORKER_MODULES = (
     "__init__.py",
     "asset_store.py",
@@ -156,7 +157,7 @@ def extract_and_verify_i2v_bundle(package_path, bundles_root, *, expected_packag
     return {"bundle_dir": bundle_dir, "request": request, "profile": profile}
 
 
-def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir):
+def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir, allow_partial=False):
     bundle_dir = Path(bundle_dir).resolve()
     work_root = Path(work_root).resolve()
     request = json.loads((bundle_dir / "request.json").read_text(encoding="utf-8"))
@@ -169,30 +170,56 @@ def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir
     clips_dir = result_dir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
-    backend = backend_factory(profile["settings"], None)
+    backend = None
     assets = []
+    errors = []
     for scene in request["scenes"]:
         sid = scene["target_id"]
-        kf_path = _inside(bundle_dir, scene["keyframe_file"])
         out_mp4 = clips_dir / f"{sid}.mp4"
-        meta = backend.generate_clip(
-            kf_path,
-            scene["prompt"],
-            scene["negative_prompt"],
-            out_mp4,
-            seed=scene["seed"],
-        )
-        raw = out_mp4.read_bytes()
-        if not raw or b"ftyp" not in raw[:64]:
-            raise RuntimeError(f"Generated clip is not a valid MP4: {out_mp4}")
-        assets.append({
-            "kind": "clip",
-            "target_id": sid,
-            "file": f"clips/{out_mp4.name}",
-            "sha256": hashlib.sha256(raw).hexdigest(),
-            "metadata": {**meta, "source_asset_id": scene["source_asset_id"], "keyframe_sha256": scene["keyframe_sha256"]},
-        })
+        if out_mp4.is_file() and out_mp4.stat().st_size > 0 and b"ftyp" in out_mp4.read_bytes()[:64]:
+            raw = out_mp4.read_bytes()
+            assets.append({
+                "kind": "clip",
+                "target_id": sid,
+                "file": f"clips/{out_mp4.name}",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "metadata": {
+                    "resumed": True,
+                    "seed": scene["seed"],
+                    "model_id": profile["model_id"],
+                    "model_revision": profile["model_revision"],
+                    "model_license": profile["model_license"],
+                    "source_asset_id": scene["source_asset_id"],
+                    "keyframe_sha256": scene["keyframe_sha256"],
+                },
+            })
+            continue
+        try:
+            if backend is None:
+                backend = backend_factory(profile["settings"], None)
+            kf_path = _inside(bundle_dir, scene["keyframe_file"])
+            meta = backend.generate_clip(
+                kf_path,
+                scene["prompt"],
+                scene["negative_prompt"],
+                out_mp4,
+                seed=scene["seed"],
+            )
+            raw = out_mp4.read_bytes()
+            if not raw or b"ftyp" not in raw[:64]:
+                raise RuntimeError(f"Generated clip is not a valid MP4: {out_mp4}")
+            assets.append({
+                "kind": "clip",
+                "target_id": sid,
+                "file": f"clips/{out_mp4.name}",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "metadata": {**meta, "source_asset_id": scene["source_asset_id"], "keyframe_sha256": scene["keyframe_sha256"]},
+            })
+        except Exception as exc:
+            out_mp4.unlink(missing_ok=True)
+            errors.append({"target_id": sid, "error": str(exc), "type": type(exc).__name__})
 
+    status = "complete" if not errors else ("partial" if assets else "failed")
     manifest = {
         "version": 1,
         "batch_id": batch_id,
@@ -203,7 +230,7 @@ def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir
     }
     manifest_path = result_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
-    outcome = {"status": "complete", "batch_id": batch_id, "assets": assets, "errors": []}
+    outcome = {"status": status, "batch_id": batch_id, "assets": assets, "errors": errors}
     (result_dir / "outcome.json").write_text(json.dumps(outcome, indent=2), encoding="utf-8", newline="\n")
 
     archive_path = work_root / "results" / f"{batch_id}.zip"
@@ -211,6 +238,8 @@ def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir
         for file_path in sorted(result_dir.rglob("*")):
             if file_path.is_file():
                 zf.write(file_path, file_path.relative_to(result_dir).as_posix())
+    if errors and not allow_partial:
+        raise RuntimeError(f"I2V batch did not complete ({status}); partial export saved at {archive_path}: {errors}")
     return {
         "result_dir": result_dir,
         "manifest_path": manifest_path,

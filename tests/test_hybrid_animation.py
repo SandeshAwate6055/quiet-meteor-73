@@ -38,14 +38,14 @@ def _make_dummy_wav(path: Path, ffmpeg: str, duration=1.2):
 
 
 class HybridAnimationTests(unittest.TestCase):
-    def test_library_has_26_approved_scenes_and_3_correction_targets(self):
+    def test_library_has_all_29_approved_episode_scenes(self):
         store = AssetStore(ROOT / "assets/library")
         catalog = store.read()
         self.assertEqual(len(catalog["approvals"]["character"]), 2)
-        self.assertEqual(len(catalog["approvals"]["scene"]), 26)
-        for missing in ("golden_acorn", "crossing_finish", "tortoise_stuck"):
-            self.assertIsNone(store.approved("scene", missing))
-        self.assertIsNotNone(store.approved("scene", "hare_sprints"))
+        self.assertEqual(len(catalog["approvals"]["scene"]), 29)
+        story = load_story(ROOT / "scripts/episode_01_golden_acorn.json")
+        for sc in story.scenes:
+            self.assertIsNotNone(store.approved("scene", sc.reuse_asset or sc.id))
 
     def test_corrections_notebook_is_lightweight_and_targets_3_scenes(self):
         nb_path = ROOT / "notebooks/one_click_episode_corrections.ipynb"
@@ -227,6 +227,69 @@ class HybridAnimationTests(unittest.TestCase):
                 created[0].generate_clip(
                     info["bundle_dir"] / "keyframes/hare_sprints.png", "p", "n", work / "extra.mp4", seed=1
                 )
+
+    def test_episode_8_clip_animation_notebook_resume_and_partial_export(self):
+        ffmpeg = media.find_tool("ffmpeg")
+        nb_path = ROOT / "notebooks/one_click_episode_animation.ipynb"
+        raw = nb_path.read_text(encoding="utf-8")
+        self.assertLess(nb_path.stat().st_size, 32 * 1024)
+        self.assertNotIn("EMBEDDED_PACKAGE_B64", raw)
+        nb = json.loads(raw)
+        self.assertEqual(nb["metadata"]["colab"]["gpuType"], "A100")
+        for cell in nb["cells"]:
+            if cell["cell_type"] == "code":
+                self.assertEqual(cell["outputs"], [])
+
+        expected_shots = [
+            "hook_blur", "crossroads_greeting", "go_signal", "stone_slip",
+            "hare_sprints", "hare_helps", "crossing_together", "crossing_finish",
+        ]
+        pkg = ROOT / "examples/episode_01_i2v_v1_one_click.zip"
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            info = extract_and_verify_i2v_bundle(pkg, work / "bundles")
+            self.assertEqual([s["target_id"] for s in info["request"]["scenes"]], expected_shots)
+            self.assertEqual(info["profile"]["max_new_clips"], 8)
+
+            def fail_on_5th_loader(prof, cache_dir):
+                calls = {"n": 0}
+                def pipe(**kwargs):
+                    calls["n"] += 1
+                    if calls["n"] >= 5:
+                        raise RuntimeError("Simulated OOM on 5th clip")
+                    return SimpleNamespace(frames=[["frame"]])
+                def export_video(frames, out_path, fps=16):
+                    _make_dummy_mp4(Path(out_path), ffmpeg, size=(832, 480), duration=0.4)
+                return pipe, export_video
+
+            partial = run_one_click_i2v_batch(
+                info["bundle_dir"], work,
+                backend_factory=lambda s, p: WanI2VBackend(s, info["profile"], work / "cache", p, pipeline_loader=fail_on_5th_loader),
+                cache_dir=work / "cache", allow_partial=True,
+            )
+            self.assertEqual(partial["outcome"]["status"], "partial")
+            self.assertEqual(len(partial["outcome"]["assets"]), 4)
+            self.assertEqual(len(partial["outcome"]["errors"]), 4)
+            self.assertTrue(partial["archive_path"].is_file())
+
+            # Resume: re-running skips the 4 already-generated clips and finishes the remaining 4
+            generated_on_resume = {"n": 0}
+            def resume_loader(prof, cache_dir):
+                def pipe(**kwargs):
+                    generated_on_resume["n"] += 1
+                    return SimpleNamespace(frames=[["frame"]])
+                def export_video(frames, out_path, fps=16):
+                    _make_dummy_mp4(Path(out_path), ffmpeg, size=(832, 480), duration=0.4)
+                return pipe, export_video
+
+            resumed = run_one_click_i2v_batch(
+                info["bundle_dir"], work,
+                backend_factory=lambda s, p: WanI2VBackend(s, info["profile"], work / "cache", p, pipeline_loader=resume_loader),
+                cache_dir=work / "cache", allow_partial=True,
+            )
+            self.assertEqual(resumed["outcome"]["status"], "complete")
+            self.assertEqual(len(resumed["outcome"]["assets"]), 8)
+            self.assertEqual(generated_on_resume["n"], 4)
 
 
 if __name__ == "__main__":

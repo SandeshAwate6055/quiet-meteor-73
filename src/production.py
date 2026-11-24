@@ -158,7 +158,9 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
             ffmpeg = find_tool("ffmpeg", ffmpeg or pipeline.get("ffmpeg"))
             ffprobe = find_tool("ffprobe", ffprobe or pipeline.get("ffprobe"))
             voice = voice or OfflineVoice()
-            animation = animation or FFmpegAnimation(ffmpeg)
+            has_approved_clips = bool(store.read()["approvals"].get("clip"))
+            if animation is None:
+                animation = HybridAnimation(ffmpeg, store) if (settings["animation"] == "hybrid" or has_approved_clips) else FFmpegAnimation(ffmpeg)
             renderer = renderer or FFmpegFinalVideo(ffmpeg, ffprobe)
             image_revision = getattr(images, "cache_key", source_revision("image_providers.py", "visuals.py"))
             state.data["providers"] = {"planner": planner.cache_key, "images": image_revision, "voice": voice.cache_key,
@@ -243,13 +245,23 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
                     if hasattr(animation, "clip_cache_key"):
                         clip_deps["approved_clip"] = animation.clip_cache_key(scene.id)
                     clip, clip_action = state.stage(f"clip:{scene.id}:{name}", clip_deps, animate)
-                    planned["clips"][name] = {**clip, "status": "completed", "action": clip_action}
+                    clip_mode = "i2v_clip" if (hasattr(animation, "clip_cache_key") and animation.clip_cache_key(scene.id) != "camera_only") else "camera_only"
+                    planned["clips"][name] = {**clip, "status": "completed", "action": clip_action, "animation_mode": clip_mode}
                     clips[name].append(clip)
                     durations[name] += clip["duration"]
                     state.save()
                 planned["status"] = "completed"
                 state.save()
             current_scene = None
+            i2v_shots = sorted({
+                s["id"] for s in state.data["scenes"]
+                if any(c.get("animation_mode") == "i2v_clip" for c in s.get("clips", {}).values())
+            })
+            cam_shots = sorted({
+                s["id"] for s in state.data["scenes"]
+                if s.get("clips") and s["id"] not in i2v_shots
+            })
+            state.data["animation_coverage"] = {"i2v_clip_scene_ids": i2v_shots, "camera_only_scene_ids": cam_shots}
             for name, records in clips.items():
                 def assemble(directory):
                     path = directory / f"{name}.mp4"

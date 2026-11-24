@@ -48,6 +48,7 @@ huggingface/
 !examples/episode_01_scenes_v4_one_click.zip
 !examples/episode_01_corrections_v4_one_click.zip
 !examples/i2v_hare_sprints_v1_one_click.zip
+!examples/episode_01_i2v_v1_one_click.zip
 # Historical, locally reviewed failed Colab results stay private and unchanged.
 /reference_v2_failed/
 /references_v3/

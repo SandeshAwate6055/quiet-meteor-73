@@ -83,7 +83,7 @@ class WanI2VBackend:
 
         import shutil
         import torch
-        from diffusers import AutoencoderKLWan, WanPipeline
+        from diffusers import AutoencoderKLWan, DiffusionPipeline
         from diffusers.utils import export_to_video
 
         ram_gib = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines()
@@ -104,7 +104,7 @@ class WanI2VBackend:
             torch_dtype=torch.float32,
             cache_dir=str(self.cache_dir),
         )
-        pipe = WanPipeline.from_pretrained(
+        pipe = DiffusionPipeline.from_pretrained(
             profile["model_id"],
             revision=profile["model_revision"],
             vae=vae,
@@ -112,13 +112,9 @@ class WanI2VBackend:
             cache_dir=str(self.cache_dir),
         )
         if "image" not in inspect.signature(pipe.__call__).parameters:
-            from diffusers import WanImageToVideoPipeline
-            pipe = WanImageToVideoPipeline.from_pretrained(
-                profile["model_id"],
-                revision=profile["model_revision"],
-                vae=vae,
-                torch_dtype=torch.bfloat16,
-                cache_dir=str(self.cache_dir),
+            raise RuntimeError(
+                f"Loaded pipeline {type(pipe).__name__} does not accept 'image' conditioning; "
+                "cannot run true first-frame I2V."
             )
         pipe.enable_model_cpu_offload()
         self.pipe = pipe
