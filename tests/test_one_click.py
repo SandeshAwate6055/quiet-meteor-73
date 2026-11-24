@@ -312,6 +312,21 @@ class OneClickGenerationTests(unittest.TestCase):
         }
         synthetic_backend = SyntheticKleinBackend(self.profile)
 
+        package_bytes = (ROOT / f"examples/{DEFAULT_PACKAGE_NAME}.zip").read_bytes()
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._payload
+
         prev_sys_path = list(sys.path)
         prev_src_modules = {k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}
         try:
@@ -320,7 +335,7 @@ class OneClickGenerationTests(unittest.TestCase):
                 "google": fake_google,
                 "google.colab": fake_colab,
                 "IPython.display": fake_ipython_display,
-            }), patch("urllib.request.urlopen", side_effect=OSError("offline test uses embedded fallback")), \
+            }), patch("urllib.request.urlopen", return_value=FakeResponse(package_bytes)), \
                     patch("importlib.metadata.version", side_effect=lambda pkg: req_pins[pkg]):
                 exec(compile(c1, "cell1", "exec"), env)
                 exec(compile(c2, "cell2", "exec"), env)
@@ -509,6 +524,21 @@ class OneClickGenerationTests(unittest.TestCase):
         challenge_profile, _, _ = load_challenge_profile()
         synthetic_backend = SyntheticKleinBackend(challenge_profile)
 
+        package_bytes = (ROOT / f"examples/{DEFAULT_CHALLENGE_PACKAGE_NAME}.zip").read_bytes()
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._payload
+
         prev_sys_path = list(sys.path)
         prev_src_modules = {k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}
         try:
@@ -517,14 +547,20 @@ class OneClickGenerationTests(unittest.TestCase):
                 "google": fake_google,
                 "google.colab": fake_colab,
                 "IPython.display": fake_ipython_display,
-            }), patch("urllib.request.urlopen", side_effect=OSError("offline test uses embedded fallback")), \
-                    patch("importlib.metadata.version", side_effect=lambda pkg: req_pins[pkg]):
+            }):
+                # Verify that an unverified/failed download fails clearly and never runs with an unverified package:
                 exec(compile(c1, "cell1", "exec"), env)
                 exec(compile(c2, "cell2", "exec"), env)
-                exec(compile(c3, "cell3", "exec"), env)
-                exec(compile(c4, "cell4", "exec"), env)
-                with patch("src.modern_images.FluxKleinBackend", return_value=synthetic_backend):
-                    exec(compile(c5, "cell5", "exec"), env)
+                with patch("urllib.request.urlopen", return_value=FakeResponse(b"corrupted_unverified_zip")):
+                    with self.assertRaisesRegex(RuntimeError, "SHA256 mismatch"):
+                        exec(compile(c3, "cell3_bad", "exec"), env)
+
+                with patch("urllib.request.urlopen", return_value=FakeResponse(package_bytes)), \
+                        patch("importlib.metadata.version", side_effect=lambda pkg: req_pins[pkg]):
+                    exec(compile(c3, "cell3", "exec"), env)
+                    exec(compile(c4, "cell4", "exec"), env)
+                    with patch("src.modern_images.FluxKleinBackend", return_value=synthetic_backend):
+                        exec(compile(c5, "cell5", "exec"), env)
         finally:
             sys.path[:] = prev_sys_path
             for k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
@@ -535,6 +571,27 @@ class OneClickGenerationTests(unittest.TestCase):
         self.assertTrue(Path(downloads[0]).is_file())
         self.assertEqual(len(displayed), 2)  # 1 contact sheet + 1 generated challenge scene image
         self.assertEqual(synthetic_backend.calls, [("scene", "challenge", scene_seed("challenge", 20261126))])
+
+    def test_notebooks_are_lightweight_with_no_embedded_base64_or_large_cells(self):
+        for name in ("notebooks/one_click_challenge_scene.ipynb", "notebooks/one_click_generation.ipynb"):
+            path = ROOT / name
+            size = path.stat().st_size
+            self.assertLess(size, 32 * 1024, f"{name} is too large ({size} bytes); must stay lightweight (<32 KiB)")
+            raw = path.read_text(encoding="utf-8")
+            self.assertNotIn("EMBEDDED_PACKAGE_B64", raw)
+            self.assertNotIn("b64decode", raw)
+            nb = json.loads(raw)
+            for idx, cell in enumerate(nb["cells"]):
+                cell_text = "".join(cell["source"])
+                self.assertLess(len(cell_text), 8 * 1024, f"{name} cell {idx} is too large ({len(cell_text)} chars)")
+                if cell["cell_type"] == "code":
+                    self.assertEqual(cell.get("outputs"), [])
+                    self.assertIsNone(cell.get("execution_count"))
+            # Verify immutable 40-hex commit URL is present in REMOTE_PACKAGE_URLS:
+            self.assertRegex(
+                raw,
+                r"https://raw\.githubusercontent\.com/SandeshAwate6055/quiet-meteor-73/[0-9a-f]{40}/examples/",
+            )
 
 
 if __name__ == "__main__":

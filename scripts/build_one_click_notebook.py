@@ -3,9 +3,9 @@ and their pinned one-click handoff ZIPs.
 
 Writes notebook JSON only; never imports GPU packages or executes model inference.
 """
-import base64
 import json
 from pathlib import Path
+import subprocess
 import textwrap
 
 from src.one_click import (
@@ -17,13 +17,30 @@ from src.one_click import (
 from src.production_state import file_hash
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO_RAW_BASE = "https://raw.githubusercontent.com/SandeshAwate6055/quiet-meteor-73/master"
+REPO_SLUG = "SandeshAwate6055/quiet-meteor-73"
+REPO_RAW_BASE = f"https://raw.githubusercontent.com/{REPO_SLUG}"
+
+
+def _package_commit(package_rel_path):
+    """Resolve the immutable git commit where package_rel_path was last modified, or HEAD."""
+    for args in (
+        ["git", "log", "-n", "1", "--format=%H", "--", package_rel_path],
+        ["git", "rev-parse", "HEAD"],
+    ):
+        proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, check=False)
+        sha = proc.stdout.strip()
+        if proc.returncode == 0 and len(sha) == 40:
+            return sha
+    return "master"
 
 
 def _write_notebook(notebook_filename, title, description_lines, package_name, handoff, profile, cell5_header):
     package_path = Path(handoff["package_path"])
     package_sha256 = file_hash(package_path)
-    package_b64 = base64.b64encode(package_path.read_bytes()).decode("ascii")
+    rel_package = f"examples/{package_name}.zip"
+    commit_sha = _package_commit(rel_package)
+    immutable_url = f"{REPO_RAW_BASE}/{commit_sha}/{rel_package}"
+    branch_url = f"{REPO_RAW_BASE}/master/{rel_package}"
 
     cells = []
 
@@ -70,7 +87,10 @@ def _write_notebook(notebook_filename, title, description_lines, package_name, h
     EXPECTED_PACKAGE_SHA256 = "{package_sha256}"
     EXPECTED_REQUEST_SHA256 = "{handoff['request_sha256']}"
     EXPECTED_PROFILE_SHA256 = "{handoff['profile_sha256']}"
-    REMOTE_PACKAGE_URL = "{REPO_RAW_BASE}/examples/{package_name}.zip"
+    REMOTE_PACKAGE_URLS = (
+        "{immutable_url}",
+        "{branch_url}",
+    )
     MIN_VRAM_GIB = {profile['min_vram_gib']}
     MIN_RAM_GIB = {profile['min_ram_gib']}
     MIN_DISK_GIB = {profile['min_disk_gib']}
@@ -117,31 +137,35 @@ def _write_notebook(notebook_filename, title, description_lines, package_name, h
 
     add("code", f"""
     # 3. Automatically retrieve version-matched generation package, verify SHA256 integrity, and load shared worker.
-    import base64, hashlib, json, sys, urllib.request
+    import hashlib, json, sys, urllib.request, zipfile
     from pathlib import Path
 
-    EMBEDDED_PACKAGE_B64 = "{package_b64}"
     package_path = WORK_ROOT / "{package_name}_{package_sha256[:12]}.zip"
 
     if not package_path.exists() or hashlib.sha256(package_path.read_bytes()).hexdigest() != EXPECTED_PACKAGE_SHA256:
         payload = None
-        try:
-            with urllib.request.urlopen(REMOTE_PACKAGE_URL, timeout=15) as resp:
-                candidate = resp.read()
-            if hashlib.sha256(candidate).hexdigest() == EXPECTED_PACKAGE_SHA256:
+        fetch_errors = []
+        for url in REMOTE_PACKAGE_URLS:
+            try:
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    candidate = resp.read()
+                actual_sha = hashlib.sha256(candidate).hexdigest()
+                if actual_sha != EXPECTED_PACKAGE_SHA256:
+                    fetch_errors.append(f"{{url}}: SHA256 mismatch (expected {{EXPECTED_PACKAGE_SHA256}}, got {{actual_sha}})")
+                    continue
                 payload = candidate
-                print("Retrieved version-matched handoff package from GitHub.")
-        except Exception as exc:
-            print("GitHub raw fetch unavailable or unverified, using embedded version-matched package:", exc)
+                print("Retrieved and SHA256-verified handoff package from:", url)
+                break
+            except Exception as exc:
+                fetch_errors.append(f"{{url}}: {{exc}}")
         if payload is None:
-            payload = base64.b64decode(EMBEDDED_PACKAGE_B64.encode("ascii"), validate=True)
-            print("Loaded embedded version-matched handoff package.")
-        if hashlib.sha256(payload).hexdigest() != EXPECTED_PACKAGE_SHA256:
-            raise ValueError("Handoff package SHA256 integrity check failed!")
+            raise RuntimeError(
+                "Could not download a SHA256-verified handoff package; refusing to run with an unverified or missing bundle. Details: "
+                + "; ".join(fetch_errors)
+            )
         package_path.write_bytes(payload)
 
     bootstrap_dir = WORK_ROOT / "bundles" / EXPECTED_PACKAGE_SHA256
-    import zipfile
     with zipfile.ZipFile(package_path) as zf:
         if sum(m.file_size for m in zf.infolist()) > 128 * 1024 * 1024 or len(zf.infolist()) > 200:
             raise ValueError("Unexpectedly large handoff archive")
