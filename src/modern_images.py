@@ -29,6 +29,10 @@ def validate_profile(profile):
     elif mode == "challenge_scene":
         if profile.get("max_new_images") != 1 or set(profile.get("scenes", {})) != {"challenge"}:
             raise ValueError("Prepared one-click challenge profile requires a strict one-scene budget for 'challenge'")
+    elif mode == "remaining_scenes":
+        expected_scenes = ("racing_ahead", "nap", "steady_steps", "finish")
+        if profile.get("max_new_images") != 4 or tuple(profile.get("scenes", {})) != expected_scenes:
+            raise ValueError("Prepared one-click remaining_scenes profile requires a strict four-scene budget for racing_ahead, nap, steady_steps, finish")
     else:
         raise ValueError(f"Unsupported one-click profile mode: {mode}")
     for key, floor in (("min_vram_gib", 22), ("min_ram_gib", 24), ("min_disk_gib", 24)):
@@ -63,6 +67,16 @@ def effective_scene_prompt(job, layout):
             "Use the provided character reference images to keep exact character appearance and 3D render style: "
             "reference image 1 is the white rabbit in the royal-blue sleeveless vest (place on the left side of the path); "
             "reference image 2 is the green tortoise with the smooth rounded chocolate-brown shell (place on the right side of the path). "
+        )
+    elif order == ["hare"]:
+        binding = (
+            "Use the provided character reference image to keep exact character appearance and 3D render style: "
+            "reference image 1 is the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no other animal is present). "
+        )
+    elif order == ["tortoise"]:
+        binding = (
+            "Use the provided character reference image to keep exact character appearance and 3D render style: "
+            "reference image 1 is the friendly green tortoise with fresh leaf-green skin and smooth rounded chocolate-brown dome shell (no other animal is present). "
         )
     else:
         binding = f"Use the provided character reference images in order ({', '.join(order)}) to keep exact character appearance and 3D render style. "
@@ -122,7 +136,9 @@ class FluxKleinBackend:
             conditioning = "text_only"
             layout = None
             ref_images = None
-        elif job["kind"] == "scene" and mode == "challenge_scene":
+        elif job["kind"] == "scene" and mode in ("challenge_scene", "remaining_scenes"):
+            if job["id"] not in self.profile.get("scenes", {}):
+                raise ValueError(f"Scene '{job['id']}' is not allowed by this one-click profile")
             if not references:
                 raise ValueError("Scene generation requires approved character reference images")
             layout = reference_layout(references)

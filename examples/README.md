@@ -1,4 +1,8 @@
-# Current handoff: `challenge` scene v4 one-click (`FLUX.2-klein-4B`)
+# Current handoff: remaining four scenes v4 one-click (`FLUX.2-klein-4B`)
+
+Use [`remaining_scenes_v4_one_click.zip`](remaining_scenes_v4_one_click.zip) and [`remaining_scenes_v4_one_click.json`](remaining_scenes_v4_one_click.json) via [`notebooks/one_click_remaining_scenes.ipynb`](../notebooks/one_click_remaining_scenes.ipynb). It embeds the approved v4 `hare` and `tortoise` references (`approval="approved"`), records the locked `challenge` approval (`scene_challenge_899664d4716f0f3272bb0247c3fc1e8727d559b536fd6edb3f94fa69e850840f`), prevents reference or `challenge` regeneration, and schedules **only** the 4 remaining scenes (`racing_ahead`, `nap`, `steady_steps`, `finish`, budget 4).
+
+## Completed handoff: `challenge` scene v4 one-click (`FLUX.2-klein-4B`)
 
 Use [`challenge_scene_v4_one_click.zip`](challenge_scene_v4_one_click.zip) and [`challenge_scene_v4_one_click.json`](challenge_scene_v4_one_click.json) via [`notebooks/one_click_challenge_scene.ipynb`](../notebooks/one_click_challenge_scene.ipynb). It embeds the approved v4 `hare` and `tortoise` references (`approval="approved"`), prevents reference regeneration, and schedules **only** the `challenge` scene (budget 1).
 

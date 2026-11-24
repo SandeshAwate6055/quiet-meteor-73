@@ -23,6 +23,8 @@ from .schema import load_story
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE_NAME = "character_references_v4_one_click"
 DEFAULT_CHALLENGE_PACKAGE_NAME = "challenge_scene_v4_one_click"
+DEFAULT_REMAINING_SCENES_PACKAGE_NAME = "remaining_scenes_v4_one_click"
+REMAINING_SCENE_IDS = ("racing_ahead", "nap", "steady_steps", "finish")
 
 
 def validate_one_click_result(manifest_path, expected_request_hash=None):
@@ -156,6 +158,10 @@ def load_challenge_profile(profile_path=None):
     return load_profile(profile_path or (ROOT / "configs/one_click_challenge_scene.json"))
 
 
+def load_remaining_scenes_profile(profile_path=None):
+    return load_profile(profile_path or (ROOT / "configs/one_click_remaining_scenes.json"))
+
+
 def build_one_click_request(story, bible, profile, profile_sha256, *, characters=("hare", "tortoise"), attempt=1):
     validate_profile(profile)
     characters = list(characters)
@@ -275,6 +281,73 @@ def build_one_click_challenge_request(store, story, bible, profile, profile_sha2
     return request
 
 
+def build_one_click_remaining_scenes_request(store, story, bible, profile, profile_sha256, *, attempt=1):
+    validate_profile(profile)
+    if profile.get("mode") != "remaining_scenes":
+        raise ValueError("Expected a remaining_scenes generation profile")
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or not 1 <= attempt <= 1000:
+        raise ValueError("attempt must be an integer from 1 to 1000")
+    for identity in ("hare", "tortoise"):
+        if not store.approved("character", identity):
+            raise ValueError(f"Character reference '{identity}' must be approved in AssetStore before preparing remaining scenes")
+    approved_challenge = store.approved("scene", "challenge")
+    if not approved_challenge:
+        raise ValueError("Scene 'challenge' must be approved and locked in AssetStore before preparing the remaining four scenes")
+    challenge_record, _ = approved_challenge
+    from .assets import export_request
+    with tempfile.TemporaryDirectory(prefix="one_click_remaining_req_") as temp:
+        directory = Path(temp)
+        request_path = directory / "request.json"
+        export_request(store, story, bible, request_path, list(REMAINING_SCENE_IDS))
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    for row in request["characters"]:
+        if "approved_reference_png_base64" not in row or "approved_reference_sha256" not in row:
+            raise ValueError(f"Missing embedded approved reference in request for character: {row.get('id')}")
+    if tuple(s["id"] for s in request["scenes"]) != REMAINING_SCENE_IDS:
+        raise ValueError(f"Remaining-scenes request must contain exactly {list(REMAINING_SCENE_IDS)}")
+    if "challenge" in {s["id"] for s in request["scenes"]}:
+        raise ValueError("Approved scene 'challenge' must never be scheduled in the remaining-scenes request")
+    if request.get("locked_scene_ids"):
+        raise ValueError(f"One or more remaining scenes are already locked by an approval: {request['locked_scene_ids']}")
+    shared_style = profile["shared_style"].strip()
+    for scene_row in request["scenes"]:
+        sid = scene_row["id"]
+        scene_spec = profile["scenes"][sid]
+        subject = scene_spec["subject"].strip()
+        neg = scene_spec["negative_prompt"].strip()
+        scene_row.update(
+            prompt=f"{subject} {shared_style}",
+            negative_prompt=neg,
+            scene_spec_revision=profile["revision"],
+        )
+    base_seed = profile["settings"]["base_seed"] + (attempt - 1)
+    request["generation_config"].update(
+        family=profile["settings"]["family"],
+        steps=profile["settings"]["steps"],
+        reference_size=profile["settings"]["reference_size"],
+        base_seed=base_seed,
+        backend_profile_sha256=profile_sha256,
+    )
+    request["generation_policy"] = {
+        "reference_only": False,
+        "allowed_scene_ids": list(REMAINING_SCENE_IDS),
+        "excluded_approved_scene_ids": ["challenge"],
+        "reviewed_smoke_scene_id": "challenge",
+        "reviewed_smoke_asset_id": challenge_record["asset_id"],
+        "reviewed_smoke_sha256": challenge_record["sha256"],
+        "full_batch_enabled": True,
+        "require_reference_review": False,
+        "scene_spec_revision": profile["revision"],
+        "scene_attempt": attempt,
+    }
+    request["quality_review"] = {
+        "references": "v4_flux_klein_approved_by_human_visual_review",
+        "challenge_scene": "v4_flux_klein_approved_and_locked_in_asset_store",
+        "approved": False,
+    }
+    return request
+
+
 def prepare_one_click_handoff(destination=None, *, name=DEFAULT_PACKAGE_NAME, characters=("hare", "tortoise"),
                               attempt=1, profile_path=None, overwrite=False):
     if not isinstance(name, str) or not name.replace("_", "").replace("-", "").isalnum():
@@ -381,6 +454,60 @@ def prepare_one_click_challenge_handoff(destination=None, *, name=DEFAULT_CHALLE
     }
 
 
+def prepare_one_click_remaining_scenes_handoff(destination=None, *, name=DEFAULT_REMAINING_SCENES_PACKAGE_NAME,
+                                               asset_dir=None, attempt=1, profile_path=None, overwrite=False):
+    if not isinstance(name, str) or not name.replace("_", "").replace("-", "").isalnum():
+        raise ValueError("Use a simple alphanumeric file name")
+    destination = Path(destination or (ROOT / "examples")).resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    store = AssetStore(asset_dir or (ROOT / "assets/library"))
+    profile, profile_bytes, profile_sha256 = load_remaining_scenes_profile(profile_path)
+    if attempt != 1:
+        profile = json.loads(profile_bytes.decode("utf-8"))
+        profile["settings"]["base_seed"] = profile["settings"]["base_seed"] + (attempt - 1)
+        profile_bytes = json.dumps(profile, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        profile_sha256 = digest(profile_bytes)
+    story = load_story(ROOT / "scripts/tortoise_and_hare.json")
+    bible = load_bible(ROOT / "configs/character_bible.json")
+    request = build_one_click_remaining_scenes_request(store, story, bible, profile, profile_sha256, attempt=attempt)
+    req_txt = (ROOT / "notebooks/requirements-one-click.txt").read_bytes()
+    from .batch_handoff import create_handoff
+    with tempfile.TemporaryDirectory(prefix="one_click_remaining_pkg_") as temp:
+        directory = Path(temp)
+        request_path = directory / "request.json"
+        request_path.write_text(json.dumps(request, indent=2, ensure_ascii=False, allow_nan=False),
+                                encoding="utf-8", newline="\n")
+        package_path = directory / "package.zip"
+        metadata = create_handoff(
+            request_path,
+            store,
+            package_path,
+            extra_files={
+                "generation_profile.json": profile_bytes,
+                "requirements-one-click.txt": req_txt,
+            },
+        )
+        copies = ((request_path, destination / f"{name}.json"), (package_path, destination / f"{name}.zip"))
+        if not overwrite:
+            for source, target in copies:
+                if target.exists() and file_hash(target) != file_hash(source):
+                    raise ValueError(f"Existing artifact differs: {target}. Choose a NEW --name; nothing was overwritten.")
+        for source, target in copies:
+            if overwrite or not target.exists():
+                target.write_bytes(source.read_bytes())
+    return {
+        **metadata,
+        "package_path": str(destination / f"{name}.zip"),
+        "request_path": str(destination / f"{name}.json"),
+        "profile_sha256": profile_sha256,
+        "approved_reference_ids": ["hare", "tortoise"],
+        "excluded_approved_scene_ids": ["challenge"],
+        "scene_ids": list(REMAINING_SCENE_IDS),
+        "base_seed": request["generation_config"]["base_seed"],
+        "generation_started": False,
+    }
+
+
 def extract_and_verify_bundle(package_path, extract_root, *, expected_package_sha256=None):
     package_path = Path(package_path).resolve()
     payload = package_path.read_bytes()
@@ -432,7 +559,8 @@ def extract_and_verify_bundle(package_path, extract_root, *, expected_package_sh
     }
 
 
-def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_dir=None, result_batch_id=None):
+def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_dir=None, result_batch_id=None,
+                        allow_partial=False):
     bundle_dir = Path(bundle_dir).resolve()
     work_root = Path(work_root).resolve()
     request_path = bundle_dir / "request.json"
@@ -457,14 +585,29 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
             raise ValueError("One-click reference execution only allows zero-scene character reference requests")
         default_prefix = "references_v4_"
         worker_mode = "references"
+        smoke_scene = None
         max_budget = min(profile["max_new_images"], len(request["characters"]))
+        quality_reviewed = False
     elif profile_mode == "challenge_scene":
         if (request.get("generation_policy", {}).get("reference_only") is True or
                 [s["id"] for s in request.get("scenes", [])] != ["challenge"]):
             raise ValueError("One-click challenge execution only allows the single 'challenge' scene request")
         default_prefix = "challenge_scene_v4_"
         worker_mode = "smoke"
+        smoke_scene = "challenge"
         max_budget = 1
+        quality_reviewed = False
+    elif profile_mode == "remaining_scenes":
+        if (request.get("generation_policy", {}).get("reference_only") is True or
+                tuple(s["id"] for s in request.get("scenes", [])) != REMAINING_SCENE_IDS or
+                "challenge" in {s["id"] for s in request.get("scenes", [])} or
+                not request.get("generation_policy", {}).get("reviewed_smoke_sha256")):
+            raise ValueError("One-click remaining_scenes execution requires approved 'challenge' smoke and exactly the 4 remaining scenes")
+        default_prefix = "remaining_scenes_v4_"
+        worker_mode = "full"
+        smoke_scene = REMAINING_SCENE_IDS[0]
+        max_budget = min(profile["max_new_images"], len(REMAINING_SCENE_IDS))
+        quality_reviewed = True
     else:
         raise ValueError(f"Unsupported one-click profile mode: {profile_mode}")
     batch_name = result_batch_id or f"{default_prefix}{probe.generation_identity[:16]}"
@@ -472,14 +615,17 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
         raise ValueError("Use a simple alphanumeric result batch name")
     result_dir = work_root / "results" / batch_name
     worker = BatchWorker(request_path, result_dir, references=references, settings=settings)
-    preflight = worker.preflight(mode=worker_mode, smoke_scene="challenge", max_new_images=max_budget)
+    preflight = worker.preflight(mode=worker_mode, smoke_scene=smoke_scene, max_new_images=max_budget,
+                                 quality_reviewed=quality_reviewed)
     if preflight["blockers"]:
         raise ValueError("Preflight blocked: " + "; ".join(preflight["blockers"]))
-    if profile_mode == "challenge_scene":
+    if profile_mode in ("challenge_scene", "remaining_scenes"):
         if any(task["kind"] == "character" for task in preflight["new_images"]):
-            raise ValueError("Challenge scene execution refused to regenerate character references; approved references must be reused")
+            raise ValueError("Scene execution refused to regenerate character references; approved references must be reused")
         if any(r.get("approval") != "approved" for r in preflight["reused_images"] if r.get("kind") == "character"):
-            raise ValueError("Challenge scene execution requires APPROVED character references")
+            raise ValueError("Scene execution requires APPROVED character references")
+        if profile_mode == "remaining_scenes" and any(task.get("id") == "challenge" for task in preflight["new_images"]):
+            raise ValueError("Approved scene 'challenge' must never be regenerated")
     result_dir.mkdir(parents=True, exist_ok=True)
     profile_snapshot = result_dir / "generation_profile.json"
     profile_bytes = profile_path.read_bytes()
@@ -494,14 +640,15 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
     if backend_factory is None:
         def backend_factory(worker_settings, previous):
             return FluxKleinBackend(worker_settings, profile, cache_dir, previous)
-    outcome = worker.execute(backend_factory, mode=worker_mode, smoke_scene="challenge", max_new_images=max_budget)
+    outcome = worker.execute(backend_factory, mode=worker_mode, smoke_scene=smoke_scene,
+                             max_new_images=max_budget, quality_reviewed=quality_reviewed)
     sheet_path = contact_sheet(result_dir)
     validation = validate_one_click_result(worker.manifest_path, expected_request_hash=worker.request_hash)
     export_dir = work_root / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
     archive_base = export_dir / f"{result_dir.name}_{uuid.uuid4().hex[:12]}"
     archive_path = Path(shutil.make_archive(str(archive_base), "zip", root_dir=result_dir))
-    if outcome.get("status") != "complete":
+    if outcome.get("status") != "complete" and not allow_partial:
         raise RuntimeError(
             f"Batch did not complete ({outcome.get('status')}); partial export saved at {archive_path}: {outcome.get('errors')}"
         )
@@ -519,7 +666,7 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("references", "challenge"), default="references")
+    parser.add_argument("--mode", choices=("references", "challenge", "remaining"), default="references")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "examples")
     parser.add_argument("--name")
     parser.add_argument("--characters", nargs="+", choices=("hare", "tortoise"), default=["hare", "tortoise"])
@@ -528,6 +675,10 @@ if __name__ == "__main__":
     if args.mode == "challenge":
         print(json.dumps(prepare_one_click_challenge_handoff(
             args.output_dir, name=args.name or DEFAULT_CHALLENGE_PACKAGE_NAME, attempt=args.attempt
+        ), indent=2))
+    elif args.mode == "remaining":
+        print(json.dumps(prepare_one_click_remaining_scenes_handoff(
+            args.output_dir, name=args.name or DEFAULT_REMAINING_SCENES_PACKAGE_NAME, attempt=args.attempt
         ), indent=2))
     else:
         print(json.dumps(prepare_one_click_handoff(

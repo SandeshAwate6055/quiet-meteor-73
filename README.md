@@ -2,7 +2,40 @@
 
 A local-first Python project for turning structured children's stories into narrated landscape videos and vertical Shorts. The current proof of concept combines offline speech, Pillow/approved illustrations, FFmpeg, and a resumable production orchestrator. A manually started Colab worker supplies candidate AI illustrations; the longer-term goal is polished 3–5-minute animated stories.
 
-## Current quality gate: v4 one-click first scene (`challenge`) with approved references
+## Current quality gate: v4 one-click remaining four story scenes (`racing_ahead`, `nap`, `steady_steps`, `finish`)
+
+The v4 character references (`hare` and `tortoise`) and the first story scene (`challenge`) generated with `black-forest-labs/FLUX.2-klein-4B` passed visual review and are pinned as **approved** in the local asset library (`assets/library/catalog.json`):
+- **Approved Hare:** `character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8`
+- **Approved Tortoise:** `character_tortoise_613f0557a5efa72b3f0ddff9e5ae8314539e8a31eecae9a15b700ed8a675e3bb`
+- **Approved First Scene (`challenge`):** `scene_challenge_899664d4716f0f3272bb0247c3fc1e8727d559b536fd6edb3f94fa69e850840f` (from `challenge_scene_v4_6f18b41472774d56`, seed `788870365`, 1024×576)
+
+The current target is to generate the **four remaining story scenes** (`racing_ahead`, `nap`, `steady_steps`, `finish`) at `1024×576` in one Colab run, reusing the approved character references (`[hare, tortoise]` for two-character shots, `[hare]` for `nap`, `[tortoise]` for `steady_steps`) and preserving the locked `challenge` scene without regenerating it.
+
+[**Open One-Click Remaining Four Scenes Notebook in Google Colab**](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_remaining_scenes.ipynb) · [Version-matched remaining-scenes package](examples/remaining_scenes_v4_one_click.zip) · [Remaining-scenes profile](configs/one_click_remaining_scenes.json)
+
+### Exact One-Click Colab Instructions (Remaining Four Scenes)
+1. Open [`notebooks/one_click_remaining_scenes.ipynb`](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_remaining_scenes.ipynb) in Google Colab.
+2. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM** enabled; requires >= 22 GiB VRAM and >= 24 GiB host RAM).
+3. Click **Runtime > Run all**.
+4. Wait for automatic hardware preflight, dependency installation, single model load, reuse of the 2 approved character references (0 reference regenerations, 0 `challenge` regenerations), generation of the **4 remaining scenes** (`racing_ahead`, `nap`, `steady_steps`, `finish`), inline display of the contact sheet and scene images, and automatic download of the result ZIP.
+5. Disconnect/delete the Colab GPU runtime once the ZIP download completes.
+
+### Rendering the First Complete Illustrated Video (After Reviewing & Approving the 4 Scenes)
+Once the downloaded 4-scene result ZIP is extracted locally and visually reviewed:
+```powershell
+$remainingManifest = Read-Host 'Full path to extracted remaining_scenes manifest.json'
+.\.venv\Scripts\python.exe -c "import sys; from src.batch_handoff import validate_result; print(validate_result(sys.argv[1]))" $remainingManifest
+.\.venv\Scripts\python.exe -m src.assets import-batch $remainingManifest
+.\.venv\Scripts\python.exe -m src.assets review --output-dir outputs/remaining_scenes_v4_review
+```
+Approve each visually accepted scene ID (`scene_racing_ahead_...`, `scene_nap_...`, `scene_steady_steps_...`, `scene_finish_...`) with `.\.venv\Scripts\python.exe -m src.assets approve <asset_id>`, then render the complete 5-scene illustrated landscape video and vertical Short (using existing offline narration and zoom/pan FFmpeg composition, with zero AI regeneration):
+```powershell
+.\.venv\Scripts\python.exe -m src.production --script scripts/tortoise_and_hare.json --output-dir outputs/production_v4_complete
+```
+
+---
+
+## Completed quality gate: v4 one-click first scene (`challenge`) with approved references
 
 The v4 character references (`hare` and `tortoise`) generated with `black-forest-labs/FLUX.2-klein-4B` passed visual review and have been imported and **approved** in the local asset library (`assets/library/catalog.json`):
 - **Approved Hare:** `character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8` (from `references_v4_447859094db50120`)

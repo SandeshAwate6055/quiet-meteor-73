@@ -301,9 +301,10 @@ class BatchWorker:
         if len(new) > max_new_images:
             blockers.append(f"Planned {len(new)} new images exceeds limit {max_new_images}")
         if mode == "full" and new:
-            smoke = self._asset("scene", smoke_scene) if smoke_scene else None
-            if not smoke or not self.data.get("smoke_scene_id") or not quality_reviewed:
-                blockers.append("Run one successful smoke scene first, inspect it, then explicitly set QUALITY_REVIEWED=True")
+            if not policy.get("reviewed_smoke_sha256"):
+                smoke = self._asset("scene", smoke_scene) if smoke_scene else None
+                if not smoke or not self.data.get("smoke_scene_id") or not quality_reviewed:
+                    blockers.append("Run one successful smoke scene first, inspect it, then explicitly set QUALITY_REVIEWED=True")
         return {"request_sha256": self.request_hash, "mode": mode, "requested_scene_ids": list(self.scenes),
             "required_reference_ids": needed,
             "generation_identity": self.generation_identity,

@@ -33,12 +33,16 @@ from src.modern_images import (
 from src.one_click import (
     DEFAULT_CHALLENGE_PACKAGE_NAME,
     DEFAULT_PACKAGE_NAME,
+    DEFAULT_REMAINING_SCENES_PACKAGE_NAME,
+    REMAINING_SCENE_IDS,
     ROOT,
     extract_and_verify_bundle,
     load_challenge_profile,
     load_profile,
+    load_remaining_scenes_profile,
     prepare_one_click_challenge_handoff,
     prepare_one_click_handoff,
+    prepare_one_click_remaining_scenes_handoff,
     run_one_click_batch,
     validate_one_click_result,
 )
@@ -573,7 +577,11 @@ class OneClickGenerationTests(unittest.TestCase):
         self.assertEqual(synthetic_backend.calls, [("scene", "challenge", scene_seed("challenge", 20261126))])
 
     def test_notebooks_are_lightweight_with_no_embedded_base64_or_large_cells(self):
-        for name in ("notebooks/one_click_challenge_scene.ipynb", "notebooks/one_click_generation.ipynb"):
+        for name in (
+            "notebooks/one_click_challenge_scene.ipynb",
+            "notebooks/one_click_generation.ipynb",
+            "notebooks/one_click_remaining_scenes.ipynb",
+        ):
             path = ROOT / name
             size = path.stat().st_size
             self.assertLess(size, 32 * 1024, f"{name} is too large ({size} bytes); must stay lightweight (<32 KiB)")
@@ -592,6 +600,211 @@ class OneClickGenerationTests(unittest.TestCase):
                 raw,
                 r"https://raw\.githubusercontent\.com/SandeshAwate6055/quiet-meteor-73/[0-9a-f]{40}/examples/",
             )
+
+    def test_remaining_four_scenes_preserve_challenge_reuse_approved_refs_and_support_partial_resume(self):
+        rem_profile, _, _ = load_remaining_scenes_profile()
+        validate_profile(rem_profile)
+        self.assertEqual(rem_profile["mode"], "remaining_scenes")
+        self.assertEqual(rem_profile["max_new_images"], 4)
+        self.assertEqual(tuple(rem_profile["scenes"]), REMAINING_SCENE_IDS)
+        self.assertNotIn("challenge", rem_profile["scenes"])
+
+        store = AssetStore(self.root / "remaining_library")
+        for identity, color in (("hare", "white"), ("tortoise", "green")):
+            img_path = self.root / f"ref_{identity}.png"
+            Image.new("RGB", (1024, 1024), color).save(img_path)
+            aid = store.import_image(img_path, "character", identity, {
+                "model_id": rem_profile["model_id"],
+                "model_revision": rem_profile["model_revision"],
+                "model_license": rem_profile["model_license"],
+                "reference_spec_revision": "reference_flux_klein_v4",
+            })
+            store.approve(aid)
+
+        # Must require 'challenge' to be approved first:
+        with self.assertRaisesRegex(ValueError, "Scene 'challenge' must be approved"):
+            prepare_one_click_remaining_scenes_handoff(self.root / "no_challenge", asset_dir=store.root)
+
+        challenge_img = self.root / "approved_challenge.png"
+        Image.new("RGB", (1024, 576), "#4caf50").save(challenge_img)
+        challenge_aid = store.import_image(challenge_img, "scene", "challenge", {
+            "model_id": rem_profile["model_id"],
+            "model_revision": rem_profile["model_revision"],
+            "model_license": rem_profile["model_license"],
+        })
+        store.approve(challenge_aid)
+
+        # Cannot regenerate challenge once locked:
+        with self.assertRaisesRegex(ValueError, "Scene 'challenge' is currently locked"):
+            prepare_one_click_challenge_handoff(self.root / "locked_challenge", asset_dir=store.root)
+
+        handoff = prepare_one_click_remaining_scenes_handoff(self.root / "rem_handoff", asset_dir=store.root)
+        self.assertEqual(handoff["scene_ids"], list(REMAINING_SCENE_IDS))
+        self.assertEqual(handoff["excluded_approved_scene_ids"], ["challenge"])
+        self.assertNotIn("challenge", handoff["scene_ids"])
+
+        bundle_info = extract_and_verify_bundle(
+            handoff["package_path"],
+            self.root / "rem_bundles",
+            expected_package_sha256=handoff["package_sha256"],
+        )
+        self.assertEqual(tuple(s["id"] for s in bundle_info["request"]["scenes"]), REMAINING_SCENE_IDS)
+        scenes_by_id = {s["id"]: s for s in bundle_info["request"]["scenes"]}
+        self.assertEqual(scenes_by_id["racing_ahead"]["characters"], ["tortoise", "hare"])
+        self.assertEqual(scenes_by_id["nap"]["characters"], ["hare"])
+        self.assertEqual(scenes_by_id["steady_steps"]["characters"], ["tortoise"])
+        self.assertEqual(scenes_by_id["finish"]["characters"], ["tortoise", "hare"])
+
+        # Test partial failure on scene 3 ('steady_steps'), automatic partial ZIP export, and safe resume:
+        backend = SyntheticKleinBackend(rem_profile, fail_id="steady_steps")
+        loads = 0
+
+        def factory(settings, previous):
+            nonlocal loads
+            loads += 1
+            return backend
+
+        work_root = self.root / "rem_colab_temp"
+        partial = run_one_click_batch(
+            bundle_info["bundle_dir"], work_root, backend_factory=factory, allow_partial=True
+        )
+        self.assertEqual(partial["outcome"]["status"], "failed")
+        self.assertTrue(partial["archive_path"].is_file())
+        self.assertEqual(partial["validation"]["completed_scene_ids"], ["racing_ahead", "nap"])
+        self.assertEqual(partial["validation"]["failed_scene_ids"], ["steady_steps"])
+        self.assertEqual(partial["validation"]["missing_scene_ids"], ["steady_steps", "finish"])
+
+        # Resume from persistent work_root: racing_ahead and nap are reused without regeneration:
+        backend.fail_id = None
+        resumed = run_one_click_batch(bundle_info["bundle_dir"], work_root, backend_factory=factory)
+        self.assertEqual(resumed["outcome"]["status"], "complete")
+        self.assertEqual(resumed["validation"]["completed_scene_ids"], list(REMAINING_SCENE_IDS))
+        self.assertEqual(resumed["validation"]["missing_scene_ids"], [])
+        self.assertEqual(
+            [c[1] for c in backend.calls],
+            ["racing_ahead", "nap", "steady_steps", "steady_steps", "finish"],
+        )
+        self.assertTrue(all(c[0] == "scene" for c in backend.calls))
+        self.assertEqual(validate_result(resumed["manifest_path"])["completed_scene_ids"], list(REMAINING_SCENE_IDS))
+
+        # Test single-character reference conditioning in FluxKleinBackend for nap (hare only) and steady_steps (tortoise only):
+        real_backend = FluxKleinBackend.__new__(FluxKleinBackend)
+        real_backend.settings = BatchSettings(family="flux2_klein", steps=4, base_seed=20261126, reference_size=1024)
+        real_backend.profile = rem_profile
+        real_backend.provenance = {
+            "model_id": rem_profile["model_id"],
+            "model_revision": rem_profile["model_revision"],
+            "model_license": rem_profile["model_license"],
+            "license_url": rem_profile["license_url"],
+            "negative_prompt_mode": rem_profile["negative_prompt_mode"],
+        }
+        real_backend.torch = MagicMock()
+        real_backend.torch.cuda.max_memory_allocated.return_value = 9 * 2**30
+        real_backend.pipe = MagicMock()
+        real_backend.pipe.tokenizer.apply_chat_template.return_value = "templated single-char scene prompt"
+        real_backend.pipe.tokenizer.return_value = {"input_ids": list(range(120))}
+        real_backend.pipe.return_value = SimpleNamespace(images=[Image.new("RGB", (1024, 576), "green")])
+
+        hare_img = Image.new("RGB", (768, 768), "white")
+        nap_job = {
+            "kind": "scene",
+            "id": "nap",
+            "prompt": scenes_by_id["nap"]["prompt"],
+            "negative_prompt": scenes_by_id["nap"]["negative_prompt"],
+            "seed": scene_seed("nap", 20261126),
+            "size": (1024, 576),
+        }
+        _, nap_meta = real_backend.generate(nap_job, {"hare": hare_img})
+        self.assertEqual(nap_meta["conditioning_layout"]["reference_order"], ["hare"])
+        self.assertEqual(real_backend.pipe.call_args.kwargs["image"], [hare_img])
+
+    def test_one_click_remaining_scenes_notebook_simulated_execution(self):
+        notebook_path = ROOT / "notebooks/one_click_remaining_scenes.ipynb"
+        self.assertTrue(notebook_path.is_file())
+        nb = json.loads(notebook_path.read_text(encoding="utf-8"))
+        code_cells = [c for c in nb["cells"] if c["cell_type"] == "code"]
+        self.assertEqual(len(code_cells), 5)
+
+        fake_torch = ModuleType("torch")
+        fake_torch.cuda = SimpleNamespace(
+            is_available=lambda: True,
+            get_device_capability=lambda idx: (8, 9),
+            get_device_properties=lambda idx: SimpleNamespace(total_memory=int(22.5 * 2**30)),
+            get_device_name=lambda idx: "NVIDIA L4",
+        )
+        downloads = []
+        displayed = []
+        fake_colab = ModuleType("google.colab")
+        fake_colab.files = SimpleNamespace(download=lambda path: downloads.append(path))
+        fake_colab.drive = SimpleNamespace(mount=lambda path: (_ for _ in ()).throw(AssertionError("Drive must not mount by default")))
+        fake_google = ModuleType("google")
+        fake_google.colab = fake_colab
+        fake_ipython_display = ModuleType("IPython.display")
+        fake_ipython_display.display = lambda obj: displayed.append(obj)
+
+        work_dir = self.root / "remaining_notebook_sim"
+        env = {}
+        c1 = "".join(code_cells[0]["source"]).replace('PERSISTENT_DIR = ""', f'PERSISTENT_DIR = {json.dumps(str(work_dir))}')
+        c2 = "".join(code_cells[1]["source"]).replace(
+            'meminfo = Path("/proc/meminfo")',
+            'meminfo = WORK_ROOT / "fake_meminfo"\nmeminfo.write_text("MemTotal: 52428800 kB\\n")',
+        )
+        c3 = "".join(code_cells[2]["source"])
+        c4 = "".join(code_cells[3]["source"])
+        c5 = "".join(code_cells[4]["source"])
+
+        req_pins = {
+            "diffusers": "0.37.1",
+            "transformers": "4.57.6",
+            "accelerate": "1.12.0",
+            "huggingface-hub": "0.36.2",
+            "safetensors": "0.7.0",
+            "Pillow": "12.1.1",
+        }
+        rem_profile, _, _ = load_remaining_scenes_profile()
+        synthetic_backend = SyntheticKleinBackend(rem_profile)
+        package_bytes = (ROOT / f"examples/{DEFAULT_REMAINING_SCENES_PACKAGE_NAME}.zip").read_bytes()
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._payload
+
+        prev_sys_path = list(sys.path)
+        prev_src_modules = {k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}
+        try:
+            with patch.dict(sys.modules, {
+                "torch": fake_torch,
+                "google": fake_google,
+                "google.colab": fake_colab,
+                "IPython.display": fake_ipython_display,
+            }), patch("urllib.request.urlopen", return_value=FakeResponse(package_bytes)), \
+                    patch("importlib.metadata.version", side_effect=lambda pkg: req_pins[pkg]):
+                exec(compile(c1, "cell1", "exec"), env)
+                exec(compile(c2, "cell2", "exec"), env)
+                exec(compile(c3, "cell3", "exec"), env)
+                exec(compile(c4, "cell4", "exec"), env)
+                with patch("src.modern_images.FluxKleinBackend", return_value=synthetic_backend):
+                    exec(compile(c5, "cell5", "exec"), env)
+        finally:
+            sys.path[:] = prev_sys_path
+            for k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
+                sys.modules.pop(k, None)
+            sys.modules.update(prev_src_modules)
+
+        self.assertEqual(len(downloads), 1)
+        self.assertTrue(Path(downloads[0]).is_file())
+        self.assertEqual(len(displayed), 5)  # 1 contact sheet + 4 generated scene images
+        self.assertEqual([c[1] for c in synthetic_backend.calls], list(REMAINING_SCENE_IDS))
+        self.assertTrue(all(c[0] == "scene" for c in synthetic_backend.calls))
 
 
 if __name__ == "__main__":

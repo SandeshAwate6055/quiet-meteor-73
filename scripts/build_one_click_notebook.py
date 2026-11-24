@@ -1,5 +1,5 @@
 """Build notebooks/one_click_generation.ipynb, notebooks/one_click_challenge_scene.ipynb,
-and their pinned one-click handoff ZIPs.
+notebooks/one_click_remaining_scenes.ipynb, and their pinned one-click handoff ZIPs.
 
 Writes notebook JSON only; never imports GPU packages or executes model inference.
 """
@@ -11,8 +11,10 @@ import textwrap
 from src.one_click import (
     DEFAULT_CHALLENGE_PACKAGE_NAME,
     DEFAULT_PACKAGE_NAME,
+    DEFAULT_REMAINING_SCENES_PACKAGE_NAME,
     prepare_one_click_challenge_handoff,
     prepare_one_click_handoff,
+    prepare_one_click_remaining_scenes_handoff,
 )
 from src.production_state import file_hash
 
@@ -260,6 +262,7 @@ def _write_notebook(notebook_filename, title, description_lines, package_name, h
         backend_factory=get_backend,
         cache_dir=CACHE_DIR,
         result_batch_id=RESULT_BATCH_ID or None,
+        allow_partial=True,
     )
 
     print("Batch completion summary:", json.dumps(run_result["validation"], indent=2))
@@ -279,6 +282,10 @@ def _write_notebook(notebook_filename, title, description_lines, package_name, h
 
     print("Exported result ZIP:", run_result["archive_path"], "| SHA256:", run_result["archive_sha256"])
     files.download(str(run_result["archive_path"]))
+    if run_result["outcome"].get("status") != "complete":
+        raise RuntimeError(
+            f"Batch did not complete ({{run_result['outcome'].get('status')}}); partial export downloaded from {{run_result['archive_path']}}: {{run_result['outcome'].get('errors')}}"
+        )
     print("Download triggered! Temporary Colab files are lost when the runtime disconnects. Disconnect/delete the GPU runtime once your ZIP download finishes.")
     """)
 
@@ -337,10 +344,32 @@ def build_challenge():
     )
 
 
+def build_remaining_scenes():
+    handoff = prepare_one_click_remaining_scenes_handoff(
+        ROOT / "examples", name=DEFAULT_REMAINING_SCENES_PACKAGE_NAME, overwrite=True
+    )
+    profile = json.loads((ROOT / "configs/one_click_remaining_scenes.json").read_text(encoding="utf-8"))
+    return _write_notebook(
+        "one_click_remaining_scenes.ipynb",
+        "AI Kids Story Studio — One-Click Remaining Four Story Scenes (`racing_ahead`, `nap`, `steady_steps`, `finish`) (v4)",
+        {
+            "step3": "Wait for automatic hardware check, dependency setup, reuse of the **approved** `hare` and `tortoise` references, generation of the **four remaining scenes** (`racing_ahead`, `nap`, `steady_steps`, `finish` at `1024x576`), visual preview, and automatic result ZIP download.",
+            "budget": "Reuses the 2 approved character references (`hare` and `tortoise`, 0 reference regenerations), preserves the already approved `challenge` scene (0 `challenge` regenerations), and generates **at most 4 new scene images** (`racing_ahead`, `nap`, `steady_steps`, `finish`) at `1024x576` in 4 distilled steps.",
+        },
+        DEFAULT_REMAINING_SCENES_PACKAGE_NAME,
+        handoff,
+        profile,
+        "Load model once, reuse approved Hare & Tortoise references, generate the 4 remaining scenes (preserving approved 'challenge'), display & auto-download ZIP.",
+    )
+
+
 def build():
     ref_result = build_references()
-    challenge_result = build_challenge()
-    return {**ref_result, "challenge": challenge_result}
+    remaining_result = build_remaining_scenes()
+    result = {**ref_result, "remaining_scenes": remaining_result}
+    if not (ROOT / "notebooks/one_click_challenge_scene.ipynb").exists():
+        result["challenge"] = build_challenge()
+    return result
 
 
 if __name__ == "__main__":

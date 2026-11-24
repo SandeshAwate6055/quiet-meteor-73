@@ -1,6 +1,15 @@
 # Phase 2 Colab quality test
 
-## Current quality gate: v4 one-click `challenge` scene (`one_click_challenge_scene.ipynb`)
+## Current quality gate: v4 one-click remaining four scenes (`one_click_remaining_scenes.ipynb`)
+
+The v4 character references (`hare` and `tortoise`) and the first scene (`challenge`) passed visual review and are pinned as **approved** in `assets/library/catalog.json` (`character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8`, `character_tortoise_613f0557a5efa72b3f0ddff9e5ae8314539e8a31eecae9a15b700ed8a675e3bb`, and `scene_challenge_899664d4716f0f3272bb0247c3fc1e8727d559b536fd6edb3f94fa69e850840f`).
+
+Use **[`notebooks/one_click_remaining_scenes.ipynb`](one_click_remaining_scenes.ipynb)** ([Open in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_remaining_scenes.ipynb)):
+1. Select **Runtime > Change runtime type > L4 or A100 GPU** (with **High-RAM**).
+2. Click **Runtime > Run all**.
+3. Wait for the notebook to reuse the 2 approved character references, preserve `challenge`, generate the **4 remaining scenes** (`racing_ahead`, `nap`, `steady_steps`, `finish` at `1024×576`), display the contact sheet and scene candidates inline, and trigger the result ZIP download automatically.
+
+## Completed quality gate: v4 one-click `challenge` scene (`one_click_challenge_scene.ipynb`)
 
 The v4 character references (`hare` and `tortoise`) passed visual review, were imported into `assets/library`, and are pinned as **approved** (`character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8` and `character_tortoise_613f0557a5efa72b3f0ddff9e5ae8314539e8a31eecae9a15b700ed8a675e3bb`).
 

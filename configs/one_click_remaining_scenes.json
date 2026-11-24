@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "mode": "remaining_scenes",
+  "revision": "remaining_scenes_flux_klein_v4",
+  "model_id": "black-forest-labs/FLUX.2-klein-4B",
+  "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+  "model_license": "apache-2.0",
+  "license_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+  "max_new_images": 4,
+  "min_vram_gib": 22,
+  "min_ram_gib": 24,
+  "min_disk_gib": 24,
+  "settings": {"family": "flux2_klein", "steps": 4, "base_seed": 20261126, "reference_size": 1024},
+  "guidance_scale": 1.0,
+  "dtype": "bfloat16",
+  "negative_prompt_mode": "inline_instruction_constraints_no_cfg",
+  "shared_style": "A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, warm sunny outdoor forest lighting and natural ground shadows. One unified wide cinematic 16:9 frame, no text, no watermark.",
+  "scenes": {
+    "racing_ahead": {
+      "subject": "Exactly two animals on a winding sunny dirt trail through a colorful green forest meadow with wildflowers: on the left, the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts) bounds joyfully ahead up the path in mid-stride; on the right further back along the same trail, the friendly green tortoise with fresh leaf-green skin, four legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes walks forward with a calm, steady smile.",
+      "negative_prompt": "extra animals, duplicate rabbit, duplicate tortoise, three animals, multiple views, split panels, colored panels, collage, triptych, character sheet, lineup, bow tie, shorts, trousers, green shell, olive shell, gray skin, pedestal, text, title, letters, numbers, watermark, logo"
+    },
+    "nap": {
+      "subject": "Exactly one animal beside a sunny winding forest dirt trail: the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts) is curled peacefully asleep in soft green grass and wildflowers beneath the dappled shade of a large leafy forest tree, with eyes gently closed and a relaxed smile. No tortoise and no other animals are present in this scene.",
+      "negative_prompt": "tortoise, turtle, second animal, extra animals, duplicate rabbit, multiple views, split panels, colored panels, collage, triptych, character sheet, lineup, bow tie, shorts, trousers, open eyes, running, pedestal, text, title, letters, numbers, watermark, logo"
+    },
+    "steady_steps": {
+      "subject": "Exactly one animal climbing a gentle flower-covered hill along a sunny forest dirt path: the friendly green tortoise with fresh leaf-green skin, four short sturdy legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes walks steadily upward toward the crest of the hill with a determined, cheerful expression among colorful wildflowers and sunlit trees. No rabbit and no other animals are present in this scene.",
+      "negative_prompt": "rabbit, hare, second animal, extra animals, duplicate tortoise, multiple views, split panels, colored panels, collage, triptych, character sheet, lineup, clothing, green shell, olive shell, gray skin, stacked shell, pedestal, text, title, letters, numbers, watermark, logo"
+    },
+    "finish": {
+      "subject": "Exactly two animals celebrating together beneath a grand old oak tree at the forest race finish line across a sunny dirt path with wildflowers: on the left stands the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts), smiling and applauding warmly for his friend; on the right stands the friendly green tortoise with fresh leaf-green skin, four legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes, beaming happily at the old oak tree finish.",
+      "negative_prompt": "extra animals, duplicate rabbit, duplicate tortoise, three animals, multiple views, split panels, colored panels, collage, triptych, character sheet, lineup, bow tie, shorts, trousers, green shell, olive shell, gray skin, pedestal, text, title, letters, numbers, watermark, logo"
+    }
+  }
+}
