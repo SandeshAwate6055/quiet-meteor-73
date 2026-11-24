@@ -24,7 +24,17 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE_NAME = "character_references_v4_one_click"
 DEFAULT_CHALLENGE_PACKAGE_NAME = "challenge_scene_v4_one_click"
 DEFAULT_REMAINING_SCENES_PACKAGE_NAME = "remaining_scenes_v4_one_click"
+DEFAULT_EPISODE_PACKAGE_NAME = "episode_01_scenes_v4_one_click"
 REMAINING_SCENE_IDS = ("racing_ahead", "nap", "steady_steps", "finish")
+EPISODE_SHARED_STYLE = (
+    "A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, "
+    "warm sunny outdoor forest lighting and natural ground shadows. One unified wide cinematic 16:9 frame, no text, no watermark."
+)
+EPISODE_NEGATIVE_COMMON = (
+    "extra animals, duplicate rabbit, duplicate tortoise, multiple views, split panels, colored panels, "
+    "collage, triptych, character sheet, lineup, bow tie, shorts, trousers, green shell, olive shell, gray skin, "
+    "pedestal, text, title, letters, numbers, watermark, logo"
+)
 
 
 def validate_one_click_result(manifest_path, expected_request_hash=None):
@@ -348,6 +358,154 @@ def build_one_click_remaining_scenes_request(store, story, bible, profile, profi
     return request
 
 
+def build_one_click_episode_bundle(store, story, bible, base_profile, *, attempt=1):
+    """Build an episode_scenes profile and request for missing shots only, reusing approved scenes."""
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or not 1 <= attempt <= 1000:
+        raise ValueError("attempt must be an integer from 1 to 1000")
+    for identity in ("hare", "tortoise"):
+        if not store.approved("character", identity):
+            raise ValueError(f"Character reference '{identity}' must be approved in AssetStore before preparing episode scenes")
+    approved_scenes = {}
+    for sc in story.scenes:
+        target = sc.reuse_asset or sc.id
+        found = store.approved("scene", target)
+        if found:
+            approved_scenes[sc.id] = (target, found[0])
+    # Require at least one reviewed/approved scene (e.g. challenge) as quality gate
+    smoke_ref = store.approved("scene", "challenge") or next((v[1] for v in approved_scenes.values()), None)
+    if not smoke_ref:
+        raise ValueError("At least one approved scene (e.g. 'challenge') is required before preparing an episode batch")
+    smoke_record = smoke_ref[0] if isinstance(smoke_ref, tuple) else smoke_ref
+
+    missing_scenes = [sc for sc in story.scenes if sc.id not in approved_scenes]
+    if not missing_scenes:
+        raise ValueError("All story scenes already have approved assets; no new image generation needed")
+
+    profile = json.loads(json.dumps(base_profile))
+    profile["mode"] = "episode_scenes"
+    profile["revision"] = "episode_scenes_flux_klein_v4"
+    profile["max_new_images"] = len(missing_scenes)
+    profile["settings"]["base_seed"] = base_profile["settings"]["base_seed"] + (attempt - 1)
+    profile["shared_style"] = EPISODE_SHARED_STYLE
+    profile["scenes"] = {}
+    for sc in missing_scenes:
+        chars = set(sc.characters)
+        extra_neg = []
+        if chars == {"hare"}:
+            extra_neg.append("tortoise, turtle, second animal")
+        elif chars == {"tortoise"}:
+            extra_neg.append("rabbit, hare, second animal, clothing")
+        neg = (", ".join(extra_neg) + ", " if extra_neg else "") + EPISODE_NEGATIVE_COMMON
+        profile["scenes"][sc.id] = {
+            "subject": sc.visual_description.strip(),
+            "negative_prompt": neg,
+        }
+    validate_profile(profile)
+    profile_bytes = json.dumps(profile, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    profile_sha256 = digest(profile_bytes)
+
+    from .assets import export_request
+    with tempfile.TemporaryDirectory(prefix="one_click_ep_req_") as temp:
+        request_path = Path(temp) / "request.json"
+        export_request(store, story, bible, request_path, [sc.id for sc in missing_scenes])
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    for row in request["characters"]:
+        if "approved_reference_png_base64" not in row or "approved_reference_sha256" not in row:
+            raise ValueError(f"Missing embedded approved reference in request for character: {row.get('id')}")
+    if request.get("locked_scene_ids"):
+        raise ValueError(f"Missing scenes unexpectedly locked: {request['locked_scene_ids']}")
+
+    shared_style = profile["shared_style"].strip()
+    for scene_row in request["scenes"]:
+        sid = scene_row["id"]
+        spec = profile["scenes"][sid]
+        scene_row.update(
+            prompt=f"{spec['subject']} {shared_style}",
+            negative_prompt=spec["negative_prompt"],
+            scene_spec_revision=profile["revision"],
+        )
+
+    request["generation_config"].update(
+        family=profile["settings"]["family"],
+        steps=profile["settings"]["steps"],
+        reference_size=profile["settings"]["reference_size"],
+        base_seed=profile["settings"]["base_seed"],
+        backend_profile_sha256=profile_sha256,
+    )
+    request["generation_policy"] = {
+        "reference_only": False,
+        "episode_scene_ids": [sc.id for sc in missing_scenes],
+        "allowed_scene_ids": [sc.id for sc in missing_scenes],
+        "excluded_approved_scene_ids": sorted({t for t, _ in approved_scenes.values()}),
+        "reused_shot_ids": [sc.id for sc in story.scenes if sc.id in approved_scenes],
+        "reviewed_smoke_scene_id": smoke_record["target_id"],
+        "reviewed_smoke_asset_id": smoke_record["asset_id"],
+        "reviewed_smoke_sha256": smoke_record["sha256"],
+        "full_batch_enabled": True,
+        "require_reference_review": False,
+        "scene_spec_revision": profile["revision"],
+        "scene_attempt": attempt,
+    }
+    request["quality_review"] = {
+        "references": "v4_flux_klein_approved_by_human_visual_review",
+        "approved_scenes_preserved": sorted({t for t, _ in approved_scenes.values()}),
+        "approved": False,
+    }
+    return request, profile, profile_bytes, profile_sha256, approved_scenes
+
+
+def prepare_one_click_episode_handoff(script_path=None, destination=None, *, name=DEFAULT_EPISODE_PACKAGE_NAME,
+                                      asset_dir=None, attempt=1, profile_path=None, overwrite=False):
+    if not isinstance(name, str) or not name.replace("_", "").replace("-", "").isalnum():
+        raise ValueError("Use a simple alphanumeric file name")
+    destination = Path(destination or (ROOT / "examples")).resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    store = AssetStore(asset_dir or (ROOT / "assets/library"))
+    base_profile, _, _ = load_challenge_profile(profile_path)
+    story = load_story(Path(script_path or (ROOT / "scripts/episode_01_golden_acorn.json")))
+    bible = load_bible(ROOT / "configs/character_bible.json")
+    request, profile, profile_bytes, profile_sha256, approved_scenes = build_one_click_episode_bundle(
+        store, story, bible, base_profile, attempt=attempt
+    )
+    req_txt = (ROOT / "notebooks/requirements-one-click.txt").read_bytes()
+    from .batch_handoff import create_handoff
+    with tempfile.TemporaryDirectory(prefix="one_click_ep_pkg_") as temp:
+        directory = Path(temp)
+        request_path = directory / "request.json"
+        request_path.write_text(json.dumps(request, indent=2, ensure_ascii=False, allow_nan=False),
+                                encoding="utf-8", newline="\n")
+        package_path = directory / "package.zip"
+        metadata = create_handoff(
+            request_path,
+            store,
+            package_path,
+            extra_files={
+                "generation_profile.json": profile_bytes,
+                "requirements-one-click.txt": req_txt,
+            },
+        )
+        copies = ((request_path, destination / f"{name}.json"), (package_path, destination / f"{name}.zip"))
+        if not overwrite:
+            for source, target in copies:
+                if target.exists() and file_hash(target) != file_hash(source):
+                    raise ValueError(f"Existing artifact differs: {target}. Choose a NEW --name; nothing was overwritten.")
+        for source, target in copies:
+            if overwrite or not target.exists():
+                target.write_bytes(source.read_bytes())
+    return {
+        **metadata,
+        "package_path": str(destination / f"{name}.zip"),
+        "request_path": str(destination / f"{name}.json"),
+        "profile_sha256": profile_sha256,
+        "approved_reference_ids": ["hare", "tortoise"],
+        "reused_shot_ids": [sc.id for sc in story.scenes if sc.id in approved_scenes],
+        "excluded_approved_scene_ids": sorted({t for t, _ in approved_scenes.values()}),
+        "scene_ids": [s["id"] for s in request["scenes"]],
+        "base_seed": request["generation_config"]["base_seed"],
+        "generation_started": False,
+    }
+
+
 def prepare_one_click_handoff(destination=None, *, name=DEFAULT_PACKAGE_NAME, characters=("hare", "tortoise"),
                               attempt=1, profile_path=None, overwrite=False):
     if not isinstance(name, str) or not name.replace("_", "").replace("-", "").isalnum():
@@ -608,6 +766,19 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
         smoke_scene = REMAINING_SCENE_IDS[0]
         max_budget = min(profile["max_new_images"], len(REMAINING_SCENE_IDS))
         quality_reviewed = True
+    elif profile_mode == "episode_scenes":
+        policy = request.get("generation_policy", {})
+        ids = [s["id"] for s in request.get("scenes", [])]
+        if (policy.get("reference_only") is True or not ids or set(ids) != set(profile["scenes"]) or
+                policy.get("episode_scene_ids") != ids or not policy.get("reviewed_smoke_sha256")):
+            raise ValueError("Episode execution requires an approved smoke scene and a request matching exactly its profile's missing shots")
+        if set(ids) & set(policy.get("excluded_approved_scene_ids", [])):
+            raise ValueError("Approved scenes must never be regenerated by an episode batch")
+        default_prefix = "episode_scenes_v4_"
+        worker_mode = "full"
+        smoke_scene = ids[0]
+        max_budget = min(profile["max_new_images"], len(ids))
+        quality_reviewed = True
     else:
         raise ValueError(f"Unsupported one-click profile mode: {profile_mode}")
     batch_name = result_batch_id or f"{default_prefix}{probe.generation_identity[:16]}"
@@ -619,7 +790,7 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
                                  quality_reviewed=quality_reviewed)
     if preflight["blockers"]:
         raise ValueError("Preflight blocked: " + "; ".join(preflight["blockers"]))
-    if profile_mode in ("challenge_scene", "remaining_scenes"):
+    if profile_mode in ("challenge_scene", "remaining_scenes", "episode_scenes"):
         if any(task["kind"] == "character" for task in preflight["new_images"]):
             raise ValueError("Scene execution refused to regenerate character references; approved references must be reused")
         if any(r.get("approval") != "approved" for r in preflight["reused_images"] if r.get("kind") == "character"):
@@ -666,7 +837,8 @@ def run_one_click_batch(bundle_dir, work_root, *, backend_factory=None, cache_di
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("references", "challenge", "remaining"), default="references")
+    parser.add_argument("--mode", choices=("references", "challenge", "remaining", "episode"), default="references")
+    parser.add_argument("--script", type=Path, default=ROOT / "scripts/episode_01_golden_acorn.json")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "examples")
     parser.add_argument("--name")
     parser.add_argument("--characters", nargs="+", choices=("hare", "tortoise"), default=["hare", "tortoise"])
@@ -679,6 +851,10 @@ if __name__ == "__main__":
     elif args.mode == "remaining":
         print(json.dumps(prepare_one_click_remaining_scenes_handoff(
             args.output_dir, name=args.name or DEFAULT_REMAINING_SCENES_PACKAGE_NAME, attempt=args.attempt
+        ), indent=2))
+    elif args.mode == "episode":
+        print(json.dumps(prepare_one_click_episode_handoff(
+            args.script, args.output_dir, name=args.name or DEFAULT_EPISODE_PACKAGE_NAME, attempt=args.attempt
         ), indent=2))
     else:
         print(json.dumps(prepare_one_click_handoff(

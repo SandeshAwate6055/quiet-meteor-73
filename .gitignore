@@ -45,6 +45,7 @@ huggingface/
 !examples/character_references_v4_one_click.zip
 !examples/challenge_scene_v4_one_click.zip
 !examples/remaining_scenes_v4_one_click.zip
+!examples/episode_01_scenes_v4_one_click.zip
 # Historical, locally reviewed failed Colab results stay private and unchanged.
 /reference_v2_failed/
 /references_v3/

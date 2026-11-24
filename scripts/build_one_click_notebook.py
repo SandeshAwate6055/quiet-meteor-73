@@ -10,9 +10,11 @@ import textwrap
 
 from src.one_click import (
     DEFAULT_CHALLENGE_PACKAGE_NAME,
+    DEFAULT_EPISODE_PACKAGE_NAME,
     DEFAULT_PACKAGE_NAME,
     DEFAULT_REMAINING_SCENES_PACKAGE_NAME,
     prepare_one_click_challenge_handoff,
+    prepare_one_click_episode_handoff,
     prepare_one_click_handoff,
     prepare_one_click_remaining_scenes_handoff,
 )
@@ -363,12 +365,46 @@ def build_remaining_scenes():
     )
 
 
+def build_episode_scenes():
+    handoff = prepare_one_click_episode_handoff(
+        ROOT / "scripts/episode_01_golden_acorn.json",
+        ROOT / "examples",
+        name=DEFAULT_EPISODE_PACKAGE_NAME,
+        overwrite=True,
+    )
+    profile = {
+        "model_id": "black-forest-labs/FLUX.2-klein-4B",
+        "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+        "model_license": "apache-2.0",
+        "license_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+        "min_vram_gib": 22,
+        "min_ram_gib": 24,
+        "min_disk_gib": 24,
+    }
+    count = len(handoff["scene_ids"])
+    reused = len(handoff["reused_shot_ids"])
+    return _write_notebook(
+        "one_click_episode_scenes.ipynb",
+        f"AI Kids Story Studio — One-Click Episode 1 Missing Scenes ({count} New Shots, {reused} Reused) (v4)",
+        {
+            "step3": f"Wait for automatic hardware check, dependency setup, reuse of the **approved** `hare` and `tortoise` references, generation of the **{count} missing episode shots** at `1024x576`, contact sheet preview, and automatic result ZIP download.",
+            "budget": f"Reuses the 2 approved character references (`hare` and `tortoise`, 0 reference regenerations), preserves all {reused} already-approved scenes (`{', '.join(handoff['excluded_approved_scene_ids'])}`), and generates **at most {count} missing scene images** at `1024x576` in 4 distilled steps. Supports partial export & resume.",
+        },
+        DEFAULT_EPISODE_PACKAGE_NAME,
+        handoff,
+        profile,
+        f"Load model once, reuse approved Hare & Tortoise references, generate the {count} missing episode shots (preserving {reused} approved scenes), display contact sheet & auto-download ZIP.",
+    )
+
+
 def build():
     ref_result = build_references()
-    remaining_result = build_remaining_scenes()
-    result = {**ref_result, "remaining_scenes": remaining_result}
+    episode_result = build_episode_scenes()
+    result = {**ref_result, "episode_scenes": episode_result}
     if not (ROOT / "notebooks/one_click_challenge_scene.ipynb").exists():
         result["challenge"] = build_challenge()
+    if not (ROOT / "notebooks/one_click_remaining_scenes.ipynb").exists():
+        result["remaining_scenes"] = build_remaining_scenes()
     return result
 
 

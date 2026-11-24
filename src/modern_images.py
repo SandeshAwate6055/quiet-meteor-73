@@ -33,6 +33,11 @@ def validate_profile(profile):
         expected_scenes = ("racing_ahead", "nap", "steady_steps", "finish")
         if profile.get("max_new_images") != 4 or tuple(profile.get("scenes", {})) != expected_scenes:
             raise ValueError("Prepared one-click remaining_scenes profile requires a strict four-scene budget for racing_ahead, nap, steady_steps, finish")
+    elif mode == "episode_scenes":
+        scenes = profile.get("scenes")
+        if (not isinstance(scenes, dict) or not 1 <= len(scenes) <= 30 or profile.get("max_new_images") != len(scenes) or
+                any(not isinstance(v, dict) or not v.get("subject") or not v.get("negative_prompt") for v in scenes.values())):
+            raise ValueError("Prepared one-click episode profile requires 1-30 scenes and a max_new_images budget equal to the scene count")
     else:
         raise ValueError(f"Unsupported one-click profile mode: {mode}")
     for key, floor in (("min_vram_gib", 22), ("min_ram_gib", 24), ("min_disk_gib", 24)):
@@ -136,7 +141,7 @@ class FluxKleinBackend:
             conditioning = "text_only"
             layout = None
             ref_images = None
-        elif job["kind"] == "scene" and mode in ("challenge_scene", "remaining_scenes"):
+        elif job["kind"] == "scene" and mode in ("challenge_scene", "remaining_scenes", "episode_scenes"):
             if job["id"] not in self.profile.get("scenes", {}):
                 raise ValueError(f"Scene '{job['id']}' is not allowed by this one-click profile")
             if not references:
@@ -174,6 +179,12 @@ class FluxKleinBackend:
             if "out of memory" in str(exc).lower():
                 raise RuntimeError("CUDA OOM during generation. No automatic retry. Export partial results, then use A100/High-RAM.") from exc
             raise
+        finally:
+            # Long episode batches reuse one loaded model; release cached activations between images.
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
         meta = {
             **self.provenance,
             "conditioning": conditioning,

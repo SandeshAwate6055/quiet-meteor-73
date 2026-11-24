@@ -55,7 +55,8 @@ class FileImageProvider:
         """Read-only, checksum-checked selection shared by planning and rendering."""
         warning = None
         try:
-            approved = self.store.approved("scene", scene.id)
+            # A shot may deliberately reuse an already approved scene image (never silently replaced).
+            approved = self.store.approved("scene", getattr(scene, "reuse_asset", None) or scene.id)
             if approved:
                 record, source = approved
                 return {"provider": "approved_file", "asset_id": record["asset_id"],

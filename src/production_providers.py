@@ -62,8 +62,9 @@ class FFmpegAnimation:
         self.ffmpeg = ffmpeg
         self.cache_key = source_revision("media.py", "production_providers.py") + hashlib.sha256(media.run([ffmpeg, "-version"], 15).encode()).hexdigest()
 
-    def animate(self, image, audio, destination, duration, size, settings):
-        return media.render_scene(self.ffmpeg, image, audio, destination, duration, size, settings["fps"], settings["threads"])
+    def animate(self, image, audio, destination, duration, size, settings, motion="push_in"):
+        # Camera motion only. Character motion needs a separate image-to-video provider (see docs/ANIMATION_PLAN.md).
+        return media.render_scene(self.ffmpeg, image, audio, destination, duration, size, settings["fps"], settings["threads"], motion)
 
 
 class FFmpegFinalVideo:

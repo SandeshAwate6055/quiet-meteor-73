@@ -2,7 +2,32 @@
 
 A local-first Python project for turning structured children's stories into narrated landscape videos and vertical Shorts. The current proof of concept combines offline speech, Pillow/approved illustrations, FFmpeg, and a resumable production orchestrator. A manually started Colab worker supplies candidate AI illustrations; the longer-term goal is polished 3–5-minute animated stories.
 
-## Current quality gate: v4 one-click remaining four story scenes (`racing_ahead`, `nap`, `steady_steps`, `finish`)
+## Current quality gate: Phase 6 — 3–4-minute Episode 1 (`The Golden Acorn Race`)
+
+All five original v4 scene illustrations (`challenge`, `racing_ahead`, `nap`, `steady_steps`, `finish`) and both character references (`hare`, `tortoise`) are visually approved and locked in `assets/library/catalog.json`.
+
+We have expanded to the first full **180–240-second** episode ([`scripts/episode_01_golden_acorn.json`](scripts/episode_01_golden_acorn.json)):
+- **29 structured storyboard shots** (~211s estimated narration + 13.5s pauses ≈ 225s total).
+- **5 shots reuse our existing approved scenes** (`starting_line → challenge`, `hare_bounds_ahead → racing_ahead`, `hare_asleep → nap`, `tortoise_passes → steady_steps`, `celebration_oak → finish`).
+- **24 new shots** need `FLUX.2-klein-4B` image generation (`1024×576`, 4 steps), reusing the approved `hare` and `tortoise` references.
+- **Shorts architecture:** [`src/shorts.py`](src/shorts.py) plans and renders standalone 720×1280 Shorts from selected story moments (`story.meta["shorts"]`).
+- **Animation status:** Currently **camera-motion only** (`push_in`, `pull_out`, `pan_left`, `pan_right`, `hold` via FFmpeg `zoompan`); see [`docs/ANIMATION_PLAN.md`](docs/ANIMATION_PLAN.md) for the hybrid character-animation plan and cost estimates.
+
+[**Open One-Click Episode 1 Missing Scenes Notebook in Google Colab**](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_episode_scenes.ipynb) · [Version-matched Episode 1 package](examples/episode_01_scenes_v4_one_click.zip)
+
+### Exact Steps to Generate the 24 Missing Episode Shots
+1. Review [`scripts/episode_01_golden_acorn.json`](scripts/episode_01_golden_acorn.json) and approve the 24-image budget.
+2. Open [`notebooks/one_click_episode_scenes.ipynb`](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_episode_scenes.ipynb) in Google Colab.
+3. Select **Runtime > Change runtime type > L4 or A100 GPU** with **High-RAM**.
+4. Click **Runtime > Run all** and wait for the result ZIP to download automatically (partial results are saved and resumable if `USE_GOOGLE_DRIVE = True` is set in Cell 1).
+5. Import, review, and approve the 24 new scenes locally, then render the full 3–4-minute episode:
+   ```powershell
+   .\.venv\Scripts\python.exe -m src.production --script scripts/episode_01_golden_acorn.json --output-dir outputs/episode_01_golden_acorn
+   ```
+
+---
+
+## Completed quality gate: v4 one-click remaining four story scenes (`racing_ahead`, `nap`, `steady_steps`, `finish`)
 
 The v4 character references (`hare` and `tortoise`) and the first story scene (`challenge`) generated with `black-forest-labs/FLUX.2-klein-4B` passed visual review and are pinned as **approved** in the local asset library (`assets/library/catalog.json`):
 - **Approved Hare:** `character_hare_ecaba14795945516dbb9d5dcc2675cc1696374322dee53d9f9ea535efb1d9ec8`

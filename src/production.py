@@ -15,7 +15,7 @@ from .assets import export_request
 from .characters import load_bible
 from .image_providers import FileImageProvider
 from .main import load_config
-from .media import find_tool, validate_video
+from .media import find_tool, mix_music, validate_video
 from .narration import wav_duration
 from .production_plan import SIZES, StructuredStoryPlanner, load_settings
 from .production_providers import FFmpegAnimation, FFmpegFinalVideo, OfflineVoice, source_revision
@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def asset_inventory(store, story):
     """Report all relevant candidate states without selecting an unapproved file."""
     catalog = store.read()
-    relevant = {"scene": {s.id for s in story.scenes}, "character": {c for s in story.scenes for c in s.characters}}
+    relevant = {"scene": {s.reuse_asset or s.id for s in story.scenes}, "character": {c for s in story.scenes for c in s.characters}}
     records = []
     for kind, targets in relevant.items():
         for target in sorted(targets):
@@ -195,7 +195,8 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
                 planned["narration"] = {**narration, "status": "completed", "action": voice_action}
                 state.data["warnings"].extend(f"{scene.id}: {w}" for w in narration["warnings"])
                 speech_seconds += narration["duration"]
-                duration = max(scene.duration, narration["duration"] + (pipeline["tail_seconds"] if narration["backend"] != "silence" else 0))
+                # Measured audio drives timing; pause_after adds a deliberate beat after narration.
+                duration = max(scene.duration, narration["duration"] + (pipeline["tail_seconds"] if narration["backend"] != "silence" else 0) + scene.pause_after)
                 duration = math.ceil(duration * pipeline["fps"]) / pipeline["fps"]
                 planned["render_duration"] = duration
                 state.save()
@@ -226,13 +227,14 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
 
                     def animate(directory):
                         path = directory / f"{scene.id}_{name}.mp4"
-                        actual = animation.animate(Path(visual["path"]), Path(narration["path"]), path, duration, size, pipeline)
+                        actual = animation.animate(Path(visual["path"]), Path(narration["path"]), path, duration, size, pipeline, scene.motion)
                         validation = validate_video(ffprobe, path, size, actual)
                         return {"path": str(path), "sha256": file_hash(path), "duration": actual, "validation": validation}, [path]
 
                     clip, clip_action = state.stage(f"clip:{scene.id}:{name}", {"provider": animation.cache_key,
                         "image_sha256": visual["sha256"], "audio_sha256": narration["sha256"], "duration": duration,
-                        "size": size, "fps": pipeline["fps"], "threads": pipeline["threads"], "animation": settings["animation"]}, animate)
+                        "size": size, "fps": pipeline["fps"], "threads": pipeline["threads"], "animation": settings["animation"],
+                        "motion": scene.motion}, animate)
                     planned["clips"][name] = {**clip, "status": "completed", "action": clip_action}
                     clips[name].append(clip)
                     durations[name] += clip["duration"]
@@ -251,6 +253,19 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
                     "size": SIZES[name]}, assemble)
                 state.data["outputs"][name] = {**result, "status": "completed", "action": action}
                 state.save()
+                music = settings["music"]
+                if music:
+                    def mix(directory, name=name, result=result):
+                        path = directory / f"{name}_music.mp4"
+                        mix_music(ffmpeg, Path(result["path"]), Path(music["path"]), path, music["volume_db"], duration=result["duration"])
+                        check = renderer.validate(path, SIZES[name], result["duration"])
+                        return {**check, "path": str(path), "sha256": file_hash(path), "music": {k: music[k] for k in ("license", "source_url", "volume_db")},
+                                "narration_only_path": result["path"]}, [path]
+
+                    mixed, mix_action = state.stage(f"music:{name}", {"final": result["sha256"], "music_sha256": file_hash(music["path"]),
+                        "volume_db": music["volume_db"], "license": music["license"]}, mix)
+                    state.data["outputs"][name] = {**mixed, "status": "completed", "action": mix_action}
+                    state.save()
             rendered_seconds = state.data["outputs"].get("landscape", next(iter(state.data["outputs"].values())))["duration"]
             target = plan["target_duration"]
             for label, seconds in (("Narration", speech_seconds), ("Rendered video", rendered_seconds)):
@@ -259,9 +274,20 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
             state.data["warnings"] = list(dict.fromkeys(state.data["warnings"]))
             state.data["timing"] = {"target_seconds": target, "requested_scene_seconds": plan["requested_scene_seconds"],
                 "narration_seconds": speech_seconds, "rendered_primary_seconds": rendered_seconds}
-            state.data["quality"] = {"uses_placeholders": bool(missing), "spoken_narration": all(
-                s["narration"].get("backend") != "silence" for s in state.data["scenes"] if s["formats"]),
-                "ai_generation_started": False}
+            spoken = all(s["narration"].get("backend") != "silence" for s in state.data["scenes"] if s["formats"])
+            blockers = []
+            if missing:
+                blockers.append(f"Placeholder cards still used for scenes: {missing}")
+            if not spoken:
+                blockers.append("Narration is silent for at least one scene")
+            window = settings["duration_range"]
+            if window and not window[0] <= rendered_seconds <= window[1]:
+                blockers.append(f"Rendered duration {rendered_seconds:.1f}s is outside the required {window[0]}-{window[1]}s range")
+                state.data["warnings"].append(blockers[-1])
+            state.data["quality"] = {"uses_placeholders": bool(missing), "spoken_narration": spoken,
+                "ai_generation_started": False, "publish_ready": not blockers, "publish_blockers": blockers,
+                "human_review_required": True,
+                "animation": "camera_motion_only; no character animation is rendered by this pipeline"}
             state.finish()
             return state.data
         except BaseException as exc:

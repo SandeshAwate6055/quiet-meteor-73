@@ -9,7 +9,8 @@ from .characters import scene_prompt
 SIZES = {"landscape": (1280, 720), "vertical": (720, 1280)}
 DEFAULTS = {"target_duration": None, "language": "en-US", "style": None,
             "formats": ["landscape", "vertical"], "vertical_scene_ids": None,
-            "narration": {"rate": 0, "silent": False}, "animation": "zoom_pan"}
+            "narration": {"rate": 0, "silent": False}, "animation": "zoom_pan",
+            "music": None, "duration_range": None}
 
 
 def load_settings(path: Path | None):
@@ -31,6 +32,22 @@ def load_settings(path: Path | None):
         raise ValueError("Current offline voice adapter supports English scripts only (en/en-US/en-GB); translation and other voices need a future provider")
     if settings["animation"] != "zoom_pan":
         raise ValueError("Only zoom_pan animation is implemented")
+    window = settings["duration_range"]
+    if window is not None and (not isinstance(window, list) or len(window) != 2 or
+            any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in window) or not 0 < window[0] < window[1] <= 3600):
+        raise ValueError("duration_range must be null or [min_seconds, max_seconds]")
+    music = settings["music"]
+    if music is not None:
+        # Music is optional and only accepted with explicit licensing provenance; nothing is bundled.
+        if (not isinstance(music, dict) or set(music) - {"path", "license", "source_url", "attribution", "volume_db"} or
+                not all(isinstance(music.get(k), str) and music[k].strip() for k in ("path", "license", "source_url"))):
+            raise ValueError("music requires path, license and source_url (attribution/volume_db optional); unlicensed audio is refused")
+        volume = music.get("volume_db", -22)
+        if isinstance(volume, bool) or not isinstance(volume, (int, float)) or not -40 <= volume <= -10:
+            raise ValueError("music volume_db must be between -40 and -10")
+        if not Path(music["path"]).is_file():
+            raise ValueError(f"Licensed music file not found: {music['path']}")
+        settings["music"] = {**music, "volume_db": volume}
     formats = settings["formats"]
     if not isinstance(formats, list) or not formats or any(not isinstance(f, str) or f not in SIZES for f in formats) or len(set(formats)) != len(formats):
         raise ValueError("formats must be a unique nonempty list of landscape/vertical")
@@ -64,7 +81,7 @@ class StructuredStoryPlanner:
             selection = images.resolve(scene)
             scenes.append({**asdict(scene), "index": index, "characters": list(scene.characters),
                 "formats": formats, "image_selection": selection, "image_prompt": prompt,
-                "required_assets": [{"kind": "scene", "id": scene.id},
+                "required_assets": [{"kind": "scene", "id": scene.reuse_asset or scene.id},
                     *({"kind": "character", "id": identity} for identity in scene.characters)],
                 "status": "pending" if formats else "not_requested", "narration": {}, "images": {}, "clips": {}})
         requested = sum(s.duration for s in story.scenes)
