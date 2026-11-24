@@ -18,7 +18,7 @@ from .main import load_config
 from .media import find_tool, mix_music, validate_video
 from .narration import wav_duration
 from .production_plan import SIZES, StructuredStoryPlanner, load_settings
-from .production_providers import FFmpegAnimation, FFmpegFinalVideo, OfflineVoice, source_revision
+from .production_providers import FFmpegAnimation, FFmpegFinalVideo, HybridAnimation, OfflineVoice, source_revision
 from .production_state import ProductionState, file_hash, production_directory, write_json
 from .schema import load_story
 
