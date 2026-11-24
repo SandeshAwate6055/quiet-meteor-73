@@ -607,8 +607,8 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
         print("All I2V dependencies already installed.")
     """)
 
-    add("code", """
-    # 5. Load Wan2.2-TI2V-5B once, animate ONLY 'hare_sprints' (81 frames @ 16 fps), preview & auto-download ZIP.
+    add("code", f"""
+    # 5. Load Wan2.2-TI2V-5B once, animate {count} shot(s) ({', '.join(handoff['scene_ids'])}), preview & auto-download ZIP.
     import json
     from IPython.display import Video, display
     from google.colab import files
@@ -634,13 +634,13 @@ def _write_i2v_notebook(notebook_filename, title, package_name, handoff, profile
     print("I2V batch outcome:", json.dumps(run_result["outcome"], indent=2))
     for asset in run_result["outcome"]["assets"]:
         clip_path = run_result["result_dir"] / asset["file"]
-        print(f"Generated {asset['kind']}/{asset['target_id']} | sha256={asset['sha256'][:16]}")
+        print(f"Generated {{asset['kind']}}/{{asset['target_id']}} | sha256={{asset['sha256'][:16]}}")
         display(Video(str(clip_path), embed=True))
 
     print("Exported result ZIP:", run_result["archive_path"], "| SHA256:", run_result["archive_sha256"])
     files.download(str(run_result["archive_path"]))
     if run_result["outcome"].get("status") != "complete":
-        raise RuntimeError(f"I2V batch did not complete ({run_result['outcome'].get('status')}): {run_result['outcome'].get('errors')}")
+        raise RuntimeError(f"I2V batch did not complete ({{run_result['outcome'].get('status')}}): {{run_result['outcome'].get('errors')}}")
     """)
 
     notebook = {

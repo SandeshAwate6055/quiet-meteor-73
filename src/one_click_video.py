@@ -194,9 +194,10 @@ def run_one_click_i2v_batch(bundle_dir, work_root, *, backend_factory, cache_dir
                 },
             })
             continue
+        if backend is None:
+            # Fail immediately on pipeline initialization or model incompatibility; never retry model loads per shot.
+            backend = backend_factory(profile["settings"], None)
         try:
-            if backend is None:
-                backend = backend_factory(profile["settings"], None)
             kf_path = _inside(bundle_dir, scene["keyframe_file"])
             meta = backend.generate_clip(
                 kf_path,

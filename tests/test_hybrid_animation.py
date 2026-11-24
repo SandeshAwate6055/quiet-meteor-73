@@ -291,6 +291,32 @@ class HybridAnimationTests(unittest.TestCase):
             self.assertEqual(len(resumed["outcome"]["assets"]), 8)
             self.assertEqual(generated_on_resume["n"], 4)
 
+    def test_i2v_init_failure_aborts_immediately_and_uses_wan_i2v_pipeline(self):
+        src_text = (ROOT / "src/modern_video.py").read_text(encoding="utf-8")
+        self.assertIn("WanImageToVideoPipeline.from_pretrained", src_text)
+        self.assertIn("expand_timesteps=True", src_text)
+        self.assertNotIn("DiffusionPipeline", src_text)
+
+        nb_text = (ROOT / "notebooks/one_click_episode_animation.ipynb").read_text(encoding="utf-8")
+        self.assertNotIn("ONLY 'hare_sprints'", nb_text)
+        self.assertIn("animate 8 shot(s)", nb_text)
+
+        pkg = ROOT / "examples/episode_01_i2v_v1_one_click.zip"
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            info = extract_and_verify_i2v_bundle(pkg, work / "bundles")
+            init_attempts = {"n": 0}
+
+            def failing_factory(settings, prev):
+                init_attempts["n"] += 1
+                raise RuntimeError("Simulated pipeline init incompatibility")
+
+            with self.assertRaises(RuntimeError):
+                run_one_click_i2v_batch(
+                    info["bundle_dir"], work, backend_factory=failing_factory, cache_dir=work / "cache", allow_partial=True
+                )
+            self.assertEqual(init_attempts["n"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
