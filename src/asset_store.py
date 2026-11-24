@@ -27,6 +27,9 @@ def read_image(path: Path) -> Image.Image:
         return ImageOps.exif_transpose(image).convert("RGB")
 
 
+VALID_ASSET_KINDS = ("scene", "character", "clip")
+
+
 class AssetStore:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
@@ -41,6 +44,8 @@ class AssetStore:
             raise ValueError("Malformed asset catalog")
         if any(not isinstance(data["approvals"].get(kind), dict) for kind in ("scene", "character")):
             raise ValueError("Malformed approval registry")
+        if "clip" in data["approvals"] and not isinstance(data["approvals"]["clip"], dict):
+            raise ValueError("Malformed clip approval registry")
         return data
 
     @contextmanager
@@ -97,28 +102,66 @@ class AssetStore:
             catalog["assets"][asset_id] = record
         return asset_id
 
+    def import_clip(self, source: Path, target_id: str, metadata=None):
+        """Import an MP4 animation clip candidate with checksum and provenance."""
+        target_id = _identifier(target_id)
+        source = Path(source)
+        if not source.is_file() or source.suffix.lower() != ".mp4":
+            raise ValueError("Clip candidates must be existing .mp4 files")
+        raw = source.read_bytes()
+        if not raw or len(raw) > 512 * 1024 * 1024 or b"ftyp" not in raw[:64]:
+            raise ValueError("Clip candidate must be a valid non-empty MP4 file")
+        sha = digest(raw)
+        asset_id = f"clip:{target_id}:{sha[:16]}"
+        destination = (self.root / "candidates" / f"clip_{target_id}_{sha[:16]}.mp4").resolve()
+        if not destination.is_relative_to(self.root):
+            raise ValueError("Candidate destination escapes asset store")
+        with self.edit() as catalog:
+            existing = catalog["assets"].get(asset_id)
+            if existing:
+                if digest(self.path_for(existing).read_bytes()) != existing["sha256"]:
+                    raise ValueError(f"Existing candidate corrupted: {asset_id}")
+                return existing
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+            record = {
+                "asset_id": asset_id,
+                "kind": "clip",
+                "target_id": target_id,
+                "file": f"candidates/{destination.name}",
+                "sha256": sha,
+                "metadata": json.loads(json.dumps(metadata or {})),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            catalog["assets"][asset_id] = record
+            catalog["history"].append({"action": "import", "asset_id": asset_id, "at": record["created_at"]})
+        return asset_id
+
     def approve(self, asset_id: str):
         with self.edit() as catalog:
             record = catalog["assets"][asset_id]
-            previous = catalog["approvals"][record["kind"]].get(record["target_id"])
+            kind_approvals = catalog["approvals"].setdefault(record["kind"], {})
+            previous = kind_approvals.get(record["target_id"])
             if previous and previous != asset_id:
                 raise ValueError("Target is locked. Explicitly unlock it with a reason before replacing its approval.")
             if digest(self.path_for(record).read_bytes()) != record["sha256"]:
                 raise ValueError("Candidate checksum mismatch")
-            catalog["approvals"][record["kind"]][record["target_id"]] = asset_id
+            kind_approvals[record["target_id"]] = asset_id
             catalog["history"].append({"action": "approve", "asset_id": asset_id, "at": datetime.now(timezone.utc).isoformat()})
 
     def unlock(self, kind: str, target_id: str, reason: str):
-        if kind not in ("scene", "character") or not reason.strip():
+        if kind not in VALID_ASSET_KINDS or not reason.strip():
             raise ValueError("Unlock requires a valid kind and nonempty reason")
         with self.edit() as catalog:
-            previous = catalog["approvals"][kind].pop(target_id, None)
+            previous = catalog["approvals"].get(kind, {}).pop(target_id, None)
             catalog["history"].append({"action": "unlock", "kind": kind, "target_id": target_id,
                 "previous": previous, "reason": reason, "at": datetime.now(timezone.utc).isoformat()})
 
     def approved(self, kind: str, target_id: str):
+        if kind not in VALID_ASSET_KINDS:
+            raise ValueError(f"Unsupported asset kind: {kind}")
         catalog = self.read()
-        asset_id = catalog["approvals"][kind].get(target_id)
+        asset_id = catalog["approvals"].get(kind, {}).get(target_id)
         if not asset_id:
             return None
         record = catalog["assets"][asset_id]
@@ -127,5 +170,8 @@ class AssetStore:
         path = self.path_for(record)
         if digest(path.read_bytes()) != record["sha256"]:
             raise ValueError(f"Approved asset modified: {asset_id}")
-        read_image(path)
+        if kind in ("scene", "character"):
+            read_image(path)
+        elif not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"Approved clip missing or empty: {asset_id}")
         return record, path

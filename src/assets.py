@@ -26,7 +26,7 @@ def import_batch(store, manifest_path, story, bible):
     root = manifest_path.parent.resolve()
     for entry in data["assets"]:
         kind, target = entry["kind"], entry["target_id"]
-        known = scene_ids if kind == "scene" else set(bible.characters) if kind == "character" else set()
+        known = scene_ids if kind in ("scene", "clip") else set(bible.characters) if kind == "character" else set()
         if target not in known:
             raise ValueError(f"Unknown asset target: {kind}/{target}")
         source = (root / safe_relative(entry["file"])).resolve()
@@ -36,17 +36,23 @@ def import_batch(store, manifest_path, story, bible):
             raise ValueError(f"Import checksum mismatch: {source}")
         if not isinstance(entry.get("metadata", {}), dict):
             raise ValueError("Asset metadata must be an object")
-        read_image(source)
+        if kind != "clip":
+            read_image(source)
         prepared.append((entry, source))
     # Validate the complete batch before importing. Import never changes approvals.
     # Retain the batch-level provenance that would otherwise be lost on import.
     batch_provenance = {"batch_id": data.get("batch_id") or root.name, "manifest_path": str(manifest_path.resolve()),
                         "manifest_sha256": digest(manifest_path.read_bytes()),
                         "metadata": {key: value for key, value in data.items() if key != "assets"}}
-    return [store.import_image(source, entry["kind"], entry["target_id"],
-                              {**entry.get("metadata", {}), "source_batch": {
-                                  **batch_provenance, "source_file": entry["file"], "source_sha256": entry["sha256"]}})
-            for entry, source in prepared]
+    imported = []
+    for entry, source in prepared:
+        meta = {**entry.get("metadata", {}), "source_batch": {
+            **batch_provenance, "source_file": entry["file"], "source_sha256": entry["sha256"]}}
+        if entry["kind"] == "clip":
+            imported.append(store.import_clip(source, entry["target_id"], meta))
+        else:
+            imported.append(store.import_image(source, entry["kind"], entry["target_id"], meta))
+    return imported
 
 
 def review(store, destination):
@@ -61,19 +67,23 @@ def review(store, destination):
         draw = ImageDraw.Draw(sheet)
         for n, row in enumerate(group):
             x, y = (n % 3) * 333, (n // 3) * 300
-            try:
-                thumb = ImageOps.contain(read_image(store.path_for(row)), (315, 210))
-                sheet.paste(thumb, (x + (333 - thumb.width) // 2, y + 4))
-            except (OSError, ValueError) as exc:
-                draw.text((x + 8, y + 8), f"Unavailable: {str(exc)[:30]}", fill="red", font=font(14))
-            locked = catalog["approvals"][row["kind"]].get(row["target_id"]) == row["asset_id"]
+            if row["kind"] == "clip":
+                draw.rectangle((x + 9, y + 6, x + 324, y + 214), outline="#263f3c", width=2)
+                draw.multiline_text((x + 24, y + 84), f"MP4 CLIP\n{row['target_id']}", font=font(17), fill="#263f3c")
+            else:
+                try:
+                    thumb = ImageOps.contain(read_image(store.path_for(row)), (315, 210))
+                    sheet.paste(thumb, (x + (333 - thumb.width) // 2, y + 4))
+                except (OSError, ValueError) as exc:
+                    draw.text((x + 8, y + 8), f"Unavailable: {str(exc)[:30]}", fill="red", font=font(14))
+            locked = catalog["approvals"].get(row["kind"], {}).get(row["target_id"]) == row["asset_id"]
             label = f"#{start+n+1} {row['kind']}/{row['target_id']}\n{row['sha256'][:16]} {'LOCKED' if locked else 'candidate'}"
             draw.multiline_text((x + 8, y + 220), label, font=font(17), fill="#263f3c")
         page = destination / f"contact_sheet_{start // 12 + 1:03d}.jpg"
         sheet.save(page)
         pages.append(str(page.resolve()))
     listing = [{"review_number": n + 1, **row,
-                "approved": catalog["approvals"][row["kind"]].get(row["target_id"]) == row["asset_id"]}
+                "approved": catalog["approvals"].get(row["kind"], {}).get(row["target_id"]) == row["asset_id"]}
                for n, row in enumerate(rows)]
     (destination / "review.json").write_text(json.dumps(listing, indent=2), encoding="utf-8")
     return {"pages": pages, "assets": listing}

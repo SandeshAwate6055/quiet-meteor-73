@@ -25,6 +25,7 @@ DEFAULT_PACKAGE_NAME = "character_references_v4_one_click"
 DEFAULT_CHALLENGE_PACKAGE_NAME = "challenge_scene_v4_one_click"
 DEFAULT_REMAINING_SCENES_PACKAGE_NAME = "remaining_scenes_v4_one_click"
 DEFAULT_EPISODE_PACKAGE_NAME = "episode_01_scenes_v4_one_click"
+DEFAULT_EPISODE_CORRECTIONS_PACKAGE_NAME = "episode_01_corrections_v4_one_click"
 REMAINING_SCENE_IDS = ("racing_ahead", "nap", "steady_steps", "finish")
 EPISODE_SHARED_STYLE = (
     "A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, "
@@ -383,12 +384,19 @@ def build_one_click_episode_bundle(store, story, bible, base_profile, *, attempt
 
     profile = json.loads(json.dumps(base_profile))
     profile["mode"] = "episode_scenes"
-    profile["revision"] = "episode_scenes_flux_klein_v4"
+    profile["revision"] = base_profile.get("revision") or "episode_scenes_flux_klein_v4"
     profile["max_new_images"] = len(missing_scenes)
     profile["settings"]["base_seed"] = base_profile["settings"]["base_seed"] + (attempt - 1)
-    profile["shared_style"] = EPISODE_SHARED_STYLE
+    profile["shared_style"] = base_profile.get("shared_style") or EPISODE_SHARED_STYLE
+    existing_specs = base_profile.get("scenes") or {}
     profile["scenes"] = {}
     for sc in missing_scenes:
+        if sc.id in existing_specs:
+            profile["scenes"][sc.id] = {
+                "subject": existing_specs[sc.id]["subject"].strip(),
+                "negative_prompt": existing_specs[sc.id]["negative_prompt"].strip(),
+            }
+            continue
         chars = set(sc.characters)
         extra_neg = []
         if chars == {"hare"}:

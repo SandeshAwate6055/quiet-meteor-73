@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "mode": "i2v_clips",
+  "revision": "i2v_wan22_ti2v_5b_v1",
+  "model_id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+  "model_revision": "b8fff7315c768468a5333511427288870b2e9635",
+  "model_license": "apache-2.0",
+  "license_url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/blob/b8fff7315c768468a5333511427288870b2e9635/LICENSE.txt",
+  "max_new_clips": 1,
+  "min_vram_gib": 22,
+  "min_ram_gib": 24,
+  "min_disk_gib": 28,
+  "dtype": "bfloat16",
+  "settings": {
+    "family": "wan22_ti2v_5b",
+    "width": 832,
+    "height": 480,
+    "num_frames": 81,
+    "fps": 16,
+    "steps": 30,
+    "guidance_scale": 5.0,
+    "base_seed": 20261128
+  },
+  "scenes": {
+    "hare_sprints": {
+      "prompt": "Smooth 3D children's cartoon animation: the white rabbit in the royal-blue sleeveless vest sprints energetically forward down the sunny forest dirt trail, ears streaming back, paws kicking up tiny puffs of dust, dappled afternoon sunlight and swaying leaves, keeping exact character design and warm 3D render style from the input image.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, changing vest color, text, watermark, blurry, static frozen frame, jerky camera, deformed anatomy"
+    }
+  }
+}

@@ -65,6 +65,27 @@ def render_scene(ffmpeg: str, image: Path, audio: Path, path: Path, duration: fl
     return duration
 
 
+def render_i2v_clip(ffmpeg: str, clip_path: Path, audio: Path, path: Path, duration: float, size, fps=24, threads=2):
+    """Fit an approved I2V MP4 clip to target dimensions and exact narration duration."""
+    w, h = size
+    frames = math.ceil(duration * fps)
+    duration = frames / fps
+    graph = (
+        f"[0:v]fps={fps},split=2[bg][fg];"
+        f"[bg]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},boxblur=24:2[bgb];"
+        f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[fgf];"
+        f"[bgb][fgf]overlay=(W-w)/2:(H-h)/2,"
+        f"fade=t=in:st=0:d=0.18,fade=t=out:st={max(0, duration - .18):.6f}:d=0.18,format=yuv420p[v]"
+    )
+    run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-filter_threads", "1",
+         "-stream_loop", "-1", "-i", clip_path, "-i", audio,
+         "-filter_complex", graph, "-map", "[v]", "-map", "1:a:0", "-af", "apad",
+         "-t", f"{duration:.6f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+         "-threads", threads, "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+         "-movflags", "+faststart", path])
+    return duration
+
+
 def concatenate(ffmpeg: str, clips: list[Path], path: Path):
     # Relative, generated ASCII filenames avoid Windows drive and quote escaping in concat files.
     listing = path.parent / f"{path.stem}_concat.txt"

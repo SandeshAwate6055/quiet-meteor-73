@@ -227,14 +227,22 @@ def produce(script: Path, output_dir: Path, *, settings_path: Path | None = None
 
                     def animate(directory):
                         path = directory / f"{scene.id}_{name}.mp4"
-                        actual = animation.animate(Path(visual["path"]), Path(narration["path"]), path, duration, size, pipeline, scene.motion)
+                        if hasattr(animation, "clip_cache_key"):
+                            actual = animation.animate(
+                                Path(visual["path"]), Path(narration["path"]), path, duration, size, pipeline, scene.motion, scene_id=scene.id
+                            )
+                        else:
+                            actual = animation.animate(Path(visual["path"]), Path(narration["path"]), path, duration, size, pipeline, scene.motion)
                         validation = validate_video(ffprobe, path, size, actual)
                         return {"path": str(path), "sha256": file_hash(path), "duration": actual, "validation": validation}, [path]
 
-                    clip, clip_action = state.stage(f"clip:{scene.id}:{name}", {"provider": animation.cache_key,
+                    clip_deps = {"provider": animation.cache_key,
                         "image_sha256": visual["sha256"], "audio_sha256": narration["sha256"], "duration": duration,
                         "size": size, "fps": pipeline["fps"], "threads": pipeline["threads"], "animation": settings["animation"],
-                        "motion": scene.motion}, animate)
+                        "motion": scene.motion}
+                    if hasattr(animation, "clip_cache_key"):
+                        clip_deps["approved_clip"] = animation.clip_cache_key(scene.id)
+                    clip, clip_action = state.stage(f"clip:{scene.id}:{name}", clip_deps, animate)
                     planned["clips"][name] = {**clip, "status": "completed", "action": clip_action}
                     clips[name].append(clip)
                     durations[name] += clip["duration"]

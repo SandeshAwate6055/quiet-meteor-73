@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "mode": "episode_scenes",
+  "revision": "episode_corrections_flux_klein_v4",
+  "model_id": "black-forest-labs/FLUX.2-klein-4B",
+  "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+  "model_license": "apache-2.0",
+  "license_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+  "max_new_images": 3,
+  "min_vram_gib": 22,
+  "min_ram_gib": 24,
+  "min_disk_gib": 24,
+  "settings": {"family": "flux2_klein", "steps": 4, "base_seed": 20261127, "reference_size": 1024},
+  "guidance_scale": 1.0,
+  "dtype": "bfloat16",
+  "negative_prompt_mode": "inline_instruction_constraints_no_cfg",
+  "shared_style": "A polished friendly 3D children's cartoon render with rounded appealing shapes, soft matte materials, warm sunny outdoor forest lighting and natural ground shadows. One unified wide cinematic 16:9 frame, no text, no watermark.",
+  "scenes": {
+    "golden_acorn": {
+      "subject": "Exactly one animal in a sunlit forest clearing: on the left, the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts) gazes in wonder at a large gleaming solid-gold acorn nut (an actual giant golden oak acorn with a textured golden acorn cap and smooth rounded golden acorn body, NOT a trophy cup or chalice) resting on a mossy tree stump in a warm sunbeam.",
+      "negative_prompt": "trophy cup, chalice, goblet, cup handles, mug, vase, bowl, tortoise, turtle, second animal, extra animals, duplicate rabbit, multiple views, split panels, collage, bow tie, shorts, trousers, text, title, letters, numbers, watermark, logo"
+    },
+    "tortoise_stuck": {
+      "subject": "Exactly one animal in the middle of a shallow sparkling forest stream: the friendly green tortoise with fresh leaf-green skin, four short sturdy legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes is visibly wedged tightly between two large wet mossy stepping stones in swirling water, looking sad and discouraged with worried eyes and her head lowered. No rabbit and no other animals are present.",
+      "negative_prompt": "rabbit, hare, second animal, extra animals, duplicate tortoise, happy smile, dry path, multiple views, split panels, collage, clothing, green shell, olive shell, gray skin, text, title, letters, numbers, watermark, logo"
+    },
+    "crossing_finish": {
+      "subject": "Exactly two animals at the forest race finish line beneath a grand old oak tree: on the right, the friendly green tortoise with fresh leaf-green skin, four legs, and a smooth rounded chocolate-brown dome shell with hexagonal scutes stretches her neck and nose clearly forward across a white painted chalk finish line on the dirt path to win first; behind the finish line on the left, the white rabbit with pink inner ears, small pink nose, and plain royal-blue sleeveless vest (no bow tie, no shorts) jumps and claps joyfully cheering for her. Do NOT show a ribbon passing through any character's body.",
+      "negative_prompt": "ribbon through body, clipping ribbon, rabbit ahead of tortoise, extra animals, duplicate rabbit, duplicate tortoise, three animals, multiple views, split panels, collage, bow tie, shorts, trousers, green shell, olive shell, gray skin, text, title, letters, numbers, watermark, logo"
+    }
+  }
+}

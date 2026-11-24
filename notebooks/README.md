@@ -1,6 +1,14 @@
-# Phase 2–6 Colab quality tests
+# Phase 2–7 Colab quality tests
 
-## Current quality gate: Episode 1 missing scenes (`one_click_episode_scenes.ipynb`)
+## Current Phase 7 quality gates
+
+### 1. Episode 1 targeted corrections (`one_click_episode_corrections.ipynb`)
+26 of 29 Episode 1 scenes and both character references (`hare`, `tortoise`) are approved in `assets/library/catalog.json`. Use **[`notebooks/one_click_episode_corrections.ipynb`](one_click_episode_corrections.ipynb)** ([Open in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_episode_corrections.ipynb)) to regenerate **only the 3 remaining shots** (`golden_acorn`, `tortoise_stuck`, `crossing_finish`) at `1024×576`.
+
+### 2. I2V 1-clip quality test (`one_click_i2v_test.ipynb`)
+Use **[`notebooks/one_click_i2v_test.ipynb`](one_click_i2v_test.ipynb)** ([Open in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/one_click_i2v_test.ipynb)) to run a **1-clip** image-to-video quality test on the approved `hare_sprints` keyframe using [`Wan-AI/Wan2.2-TI2V-5B-Diffusers`](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers) (commit `b8fff7315c768468a5333511427288870b2e9635`, **Apache-2.0**, `832×480`, `81` frames @ `16` fps).
+
+## Completed quality gate: Episode 1 missing scenes (`one_click_episode_scenes.ipynb`)
 
 All 5 original v4 scenes (`challenge`, `racing_ahead`, `nap`, `steady_steps`, `finish`) and both character references (`hare`, `tortoise`) are approved in `assets/library/catalog.json`.
 

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "kind": "i2v_clips",
+  "batch_id": "i2v_hare_sprints_v1_one_click_68a4b660",
+  "model_id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+  "model_revision": "b8fff7315c768468a5333511427288870b2e9635",
+  "model_license": "apache-2.0",
+  "max_new_clips": 1,
+  "scenes": [
+    {
+      "target_id": "hare_sprints",
+      "keyframe_file": "keyframes/hare_sprints.png",
+      "keyframe_sha256": "7d45ca6d73195a8015ca1ff0f5745ee11f15e7a6757fbac7594d139767a2f45e",
+      "source_asset_id": "scene_hare_sprints_7d45ca6d73195a8015ca1ff0f5745ee11f15e7a6757fbac7594d139767a2f45e",
+      "prompt": "Smooth 3D children's cartoon animation: the white rabbit in the royal-blue sleeveless vest sprints energetically forward down the sunny forest dirt trail, ears streaming back, paws kicking up tiny puffs of dust, dappled afternoon sunlight and swaying leaves, keeping exact character design and warm 3D render style from the input image.",
+      "negative_prompt": "morphing face, extra limbs, duplicate rabbit, changing vest color, text, watermark, blurry, static frozen frame, jerky camera, deformed anatomy",
+      "seed": 20261128
+    }
+  ]
+}

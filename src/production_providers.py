@@ -67,6 +67,33 @@ class FFmpegAnimation:
         return media.render_scene(self.ffmpeg, image, audio, destination, duration, size, settings["fps"], settings["threads"], motion)
 
 
+class HybridAnimation:
+    """Use an approved I2V MP4 clip when present for a shot, otherwise fall back to FFmpeg camera motion."""
+
+    def __init__(self, ffmpeg, store):
+        self.ffmpeg = ffmpeg
+        self.store = store
+        self.fallback = FFmpegAnimation(ffmpeg)
+        self.cache_key = (
+            source_revision("media.py", "production_providers.py", "asset_store.py")
+            + hashlib.sha256(media.run([ffmpeg, "-version"], 15).encode()).hexdigest()
+        )
+
+    def clip_cache_key(self, scene_id: str) -> str:
+        approved = self.store.approved("clip", scene_id)
+        return approved[0]["sha256"] if approved else "camera_only"
+
+    def animate(self, image, audio, destination, duration, size, settings, motion="push_in", scene_id=None):
+        if scene_id:
+            approved = self.store.approved("clip", scene_id)
+            if approved:
+                _, clip_path = approved
+                return media.render_i2v_clip(
+                    self.ffmpeg, clip_path, audio, destination, duration, size, settings["fps"], settings["threads"]
+                )
+        return self.fallback.animate(image, audio, destination, duration, size, settings, motion)
+
+
 class FFmpegFinalVideo:
     def __init__(self, ffmpeg, ffprobe):
         self.ffmpeg, self.ffprobe = ffmpeg, ffprobe
