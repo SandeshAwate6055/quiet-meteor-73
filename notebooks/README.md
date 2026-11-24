@@ -1,18 +1,14 @@
 # Phase 2 Colab quality test
 
-## Current quality gate: revised challenge only
+## Current quality gate: v3 references only
 
-The technically successful real SDXL/IP-Adapter smoke **failed human visual review**. Keep it and the old references as historical candidates; none is automatically accepted. Use the updated notebook with **`examples/challenge_smoke_v2.zip`**, not `colab_handoff.zip`. [Exact current controls and instructions](../examples/README.md) cover CPU dry run → two new single-view references → human reference review → exactly one `challenge` scene. Full-batch generation is blocked by this request. Keep `QUALITY_REVIEWED=False` and stop at scene review.
+The real v2 references failed visual review. Use **`examples/character_references_v3.zip`** with a fresh copy of `phase2_batch_worker.ipynb`. [Exact v3 settings and retry instructions](REFERENCE_V3.md) cover CPU dry run, two text-only SDXL character images, review/export and stop. **Zero scenes are requested; challenge, smoke and full modes are blocked.** No image is automatically approved. V3 has not run on GPU; local synthetic tests do not establish visual quality.
 
-The old 512×512 board globally encoded a two-view rabbit and a front-facing tortoise together. It carried a reference-sheet composition into conditioning and provided no reliable visible brown back-shell evidence. Separate embeddings with per-image masks now guide left/right regions at lower scale 0.35; short subject-first prompts and distinct negative prompts target the forest starting-line composition. Both text encoders are checked for truncation before inference. These are practical mitigations, not independent trained identities, hard spatial control, or proof that the next result will pass. No new ControlNet, FaceID, LoRA or animation model is loaded.
+The actual v2 manifest shows text-only reference generation, no active adapter, and untruncated prompts. The saved contact sheet was inspected. [The diagnosis](REFERENCE_V3.md#what-the-saved-run-establishes) distinguishes these facts from prompt-pattern/color-binding hypotheses. The old v1/v2 packages and images remain historical and unchanged. The active notebook rejects them; older/general workflow details below are retained for context and are not current generation instructions.
 
-The new worker records request/settings/implementation identity and reference binding, and never resumes incompatible v1 generations. Blank `RESULT_BATCH_ID` selects a fresh v2 identity automatically. Old artifact ZIPs are preserved unchanged. The v2 result envelope remains import-compatible with existing candidate approval and checksum controls. The mask API follows [the pinned Diffusers masking guide](https://huggingface.co/docs/diffusers/v0.35.1/en/using-diffusers/ip_adapter#masking) and [its attention-processor implementation](https://github.com/huggingface/diffusers/blob/v0.35.1/src/diffusers/models/attention_processor.py). GPU execution and image quality for this revision remain untested until you run the restricted smoke.
+## Historical/general worker: all requested scenes, with smoke-first resume
 
-The sections below describe the historical/general v1 batch workflow. Its full-batch expansion steps are superseded by the current challenge-only quality gate.
-
-## Current worker: all requested scenes, with smoke-first resume
-
-The original batch workflow used [phase2_batch_worker.ipynb](phase2_batch_worker.ipynb), which is now updated for the restricted v2 smoke above. Two real historical references remain unapproved. A later real challenge smoke was reported technically successful but visually unacceptable. The **v2 masked-reference revision has not been GPU-executed**. Shared state/intake and backend argument wiring are tested locally with synthetic fixtures; no model, ML package or GPU credit was used during this revision.
+The original batch workflow used [phase2_batch_worker.ipynb](phase2_batch_worker.ipynb), which is now updated for the restricted v2 smoke above. Two real historical references remain unapproved. A later real challenge smoke was reported technically successful but visually unacceptable. The v2 worker generated two references on Colab, both rejected visually; no v2 challenge was generated. The **v3 reference-only revision has not been GPU-executed**. Shared state/intake and backend argument wiring are tested locally with synthetic fixtures; no model, ML package or GPU credit was used during this revision.
 
 Export a ready handoff without modifying existing production or rendering:
 

@@ -2,27 +2,33 @@
 
 A local-first Python project for turning structured children's stories into narrated landscape videos and vertical Shorts. The current proof of concept combines offline speech, Pillow/approved illustrations, FFmpeg, and a resumable production orchestrator. A manually started Colab worker supplies candidate AI illustrations; the longer-term goal is polished 3–5-minute animated stories.
 
-## Public checkout and Colab inputs
+## Current quality gate: v3 character references only
 
-[Open the revised smoke notebook in Google Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/phase2_batch_worker.ipynb) · [Download the revised challenge handoff](https://raw.githubusercontent.com/SandeshAwate6055/quiet-meteor-73/master/examples/challenge_smoke_v2.zip)
+Both real v2 references failed human review (pink vest/bow tie; tiled green-shelled tortoises). Nothing from those results is approved. This task revises reference generation only; **do not generate challenge or any other scene yet**.
 
-Install the local dependencies using the setup section below. The current [challenge-only handoff](examples/challenge_smoke_v2.zip) contains revised prompts and worker code, with no historical reference pixels. Reproduce it without generating images using `.\.venv\Scripts\python.exe -m scripts.prepare_challenge_smoke`. The [original public handoff](examples/colab_handoff.zip) is preserved as a historical candidate package, not the current smoke input. See [exact reference/smoke steps](examples/README.md).
+[Open the v3 notebook in Colab](https://colab.research.google.com/github/SandeshAwate6055/quiet-meteor-73/blob/master/notebooks/phase2_batch_worker.ipynb) · [Download the NEW reference-only handoff](https://raw.githubusercontent.com/SandeshAwate6055/quiet-meteor-73/master/examples/character_references_v3.zip) · [Exact settings, diagnosis and individual retry instructions](notebooks/REFERENCE_V3.md)
 
-The previous real smoke failed visual review: it produced panels/extra figures and lost the intended colors/environment. Nothing from that smoke is quality-approved. The revised request requires two new single-view references, explicit reference review, and exactly one `challenge` scene; full-batch generation is disabled. Historical files, images and approvals are preserved. Default notebook mode remains a CPU dry run with no model download or inference.
+Start a fresh notebook copy on CPU, run cells 1–3 with default dry run and upload `character_references_v3.zip`. Expect **two character jobs, zero scenes, zero reused images**. Then manually choose GPU, keep the printed `PACKAGE_PATH`, set `MODE="references"`, `MAX_NEW_IMAGES=2`, `RUN_GENERATION=True`, `INSTALL_COLAB_DEPS=True`, `LICENSES_REVIEWED=True`, `FAMILY="sdxl"`, `STEPS=30`, `BASE_SEED=20261124`. Leave `RESULT_BATCH_ID` and `REFERENCE_BATCH_MANIFEST` blank and all preview/review flags false. Run cells 1–5, inspect the images, export with cell 6, disconnect, and stop for human review.
 
-## Current quality milestone: one challenge scene
+V3 uses text-only SDXL Base at 1024-square, guidance 6.5, shared 3D studio styling, explicit clothing/shell colors and separate subject-specific negatives. IP-Adapter is inactive for reference jobs. Both animals must be single full-body three-quarter views; the rabbit needs a blue sleeveless vest without a bow tie, and the green tortoise needs a visible rounded brown shell with hexagonal scutes. No tile, collage, sheet or repeated animals. Human review remains necessary; **v3 has not been GPU-executed**.
 
-1. Open the revised notebook in Colab, save a fresh Drive copy, run cells 1–3 on CPU, and upload `examples/challenge_smoke_v2.zip`. Leave `RESULT_BATCH_ID` blank so request/settings/code hashes select a fresh directory. Do not point at the failed batch.
-2. When ready to use GPU credits manually, set `MODE="references"`, `MAX_NEW_IMAGES=2`, `RUN_GENERATION=True`, `INSTALL_COLAB_DEPS=True`, `LICENSES_REVIEWED=True`. Keep `QUALITY_REVIEWED=False`. Run cells 1–5. This produces only two reference candidates. Review one full-body 3/4 white rabbit with pink inner ears/blue vest, and one full-body 3/4 green tortoise with a clearly visible rounded brown patterned back shell. No multiple views, pedestal or character-sheet layout.
-3. If both reference images pass your review, keep the saved `PACKAGE_PATH` and result directory. Set `MODE="smoke"`, `MAX_NEW_IMAGES=1`, `REFERENCES_REVIEWED=True`, and explicitly set `ALLOW_UNAPPROVED_REFERENCE_PREVIEW=True`. Run cells 1–5 again. Only `challenge` is generated. Check exactly two animals, correct colors/clothing/shell, one sunny forest starting line, one coherent frame, no panels/lineup/extra characters/text. Stop at this review; the other four scenes are not scheduled. Export with cell 6 and disconnect/delete the runtime when done.
+Reproduce the small request package without loading a model:
 
-The 512×512 combined board was removed. The same SDXL/ViT-H adapter now encodes references separately and uses per-image spatial attention masks with lower influence (0.35). Rabbit is guided left, tortoise right; masks are attention gates, not colored scene panels. This follows [Diffusers 0.35.1's masking API](https://huggingface.co/docs/diffusers/v0.35.1/en/using-diffusers/ip_adapter#masking). It reduces a known collage input bias but does **not** guarantee independent identity, exact count, anatomy or pose. These are not trained character identities or semantic segmentation masks; ControlNet/inpainting would add further structural control and cost and are not implemented here. Model inference remains untested for this revision until the new smoke is actually run.
+```powershell
+.\.venv\Scripts\python.exe -m scripts.prepare_reference_v3
+```
 
-Positive reference prompts, positive scene prompts and negative prompts are distinct fields. Subject count/appearance and action now precede a short style suffix; token counts for both SDXL tokenizers are recorded and any truncation raises before inference. Original stable-ID scene seeds remain unchanged. Request, settings, prompting/conditioning implementation and reference bindings prevent incompatible reuse; old worker-v1 batches are never silently resumed by v2. A changed setup needs a new result batch, not a retry over the failed images.
+Retry only a rejected tortoise with a fresh request/seed; the good hare is never scheduled:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.prepare_reference_v3 --characters tortoise --attempt 2 --name tortoise_reference_v3_retry2 --output-dir outputs/reference_retry_v3
+```
+
+Use its new ZIP in a fresh session, `BASE_SEED=20261125`, budget 1. Substitute `hare` to retry only hare. Existing images, handoffs, outputs and approvals remain unchanged. Content/settings/code identities prevent incompatible resume; required-reference completion is validated before claiming a batch complete. Scene prompts, rendering, narration and orchestration architecture remain unchanged. The sections below preserve the general pipeline commands; their scene-generation actions are **deferred until reference quality review passes**.
 
 ## General batch integration (historical v1 workflow)
 
-The infrastructure below remains available, but the current quality task uses only the restricted v2 request above. Its policy blocks full mode, including after technical smoke completion. The original five-scene package is historical; it must not be used to expand the failed smoke.
+The infrastructure below remains available, but the current quality task uses only the reference-only v3 request above. Its policy blocks full mode, including after technical smoke completion. The original five-scene package is historical; it must not be used to expand the failed smoke.
 
 1. Run production normally:
 

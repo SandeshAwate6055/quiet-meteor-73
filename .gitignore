@@ -41,5 +41,8 @@ huggingface/
 *.zip
 !examples/colab_handoff.zip
 !examples/challenge_smoke_v2.zip
+!examples/character_references_v3.zip
+# Historical, locally reviewed failed Colab results stay private and unchanged.
+/reference_v2_failed/
 /20??????T??????Z_*/
 notebooks/*_input.json

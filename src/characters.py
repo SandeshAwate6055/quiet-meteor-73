@@ -6,14 +6,14 @@ from pathlib import Path, PurePosixPath
 from .schema import _identifier, _text
 
 PROMPT_REVISION = "single_scene_v2"
-REFERENCE_SPEC_REVISION = "single_view_v2"
+REFERENCE_SPEC_REVISION = "single_reference_v3"
 SCENE_NEGATIVE_PROMPT = (
     "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, "
     "extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal"
 )
 REFERENCE_NEGATIVE_PROMPT = (
-    "multiple views, front and back views, turnaround, character sheet, split panels, collage, "
-    "extra characters, duplicate animal, pedestal, display stand, text, watermark"
+    "duplicate animals, multiple animals, multiple views, tiled composition, wallpaper, "
+    "repeating motifs, split panels, character sheet, collage, cropped body, pedestal, text, watermark"
 )
 
 
@@ -84,5 +84,15 @@ def scene_prompt(scene, bible: CharacterBible) -> str:
 
 
 def reference_prompt(character: Character, bible: CharacterBible) -> str:
+    # Reference-only specifications can be revised without changing story prompts.
+    subject = character.metadata.get("reference_subject")
+    if subject:
+        style = bible.metadata.get("reference_style", bible.style)
+        return f"{_text(subject, 'reference_subject', 3000)}. {_text(style, 'reference_style', 1000)}."
     pose = character.metadata.get("reference_pose", "single full-body three-quarter view, standing on plain ground")
     return f"Exactly one {character.name.lower()} with {character.appearance}. {pose}. {bible.style}, neutral background."
+
+
+def reference_negative_prompt(character: Character) -> str:
+    extra = character.metadata.get("reference_negative_prompt", "")
+    return REFERENCE_NEGATIVE_PROMPT + (", " + _text(extra, "reference_negative_prompt", 1000) if extra else "")

@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "title": "Tiny Steps, Big Finish",
+  "style": "Friendly high-quality 3D cartoon",
+  "environment": "Plain neutral gray studio background",
+  "characters": [
+    {
+      "id": "hare",
+      "name": "Rabbit",
+      "appearance": "white fur, pink inner ears, blue vest",
+      "reference_image_paths": [
+        "assets/references/hare.png"
+      ],
+      "metadata": {
+        "role": "Fast, overconfident but kind friend",
+        "continuity": "Keep fur white and vest blue in every scene",
+        "reference_pose": "Single full-body three-quarter view, paws on plain ground, one view only",
+        "reference_subject": "Exactly one white rabbit wearing only a royal blue sleeveless vest. Pink inner ears, small pink nose; full-body three-quarter view, centered, entire body visible",
+        "reference_negative_prompt": "pink vest, red vest, bow tie, necktie, shirt, trousers, hat, accessories",
+        "reference_spec_revision": "single_reference_v3"
+      },
+      "prompt": "Exactly one white rabbit wearing only a royal blue sleeveless vest. Pink inner ears, small pink nose; full-body three-quarter view, centered, entire body visible. Friendly high-quality 3D cartoon render, soft studio lighting, plain neutral gray background.",
+      "negative_prompt": "duplicate animals, multiple animals, multiple views, tiled composition, wallpaper, repeating motifs, split panels, character sheet, collage, cropped body, pedestal, text, watermark, pink vest, red vest, bow tie, necktie, shirt, trousers, hat, accessories",
+      "reference_spec_revision": "single_reference_v3"
+    },
+    {
+      "id": "tortoise",
+      "name": "Tortoise",
+      "appearance": "green skin, visible rounded brown patterned shell",
+      "reference_image_paths": [
+        "assets/references/tortoise.png"
+      ],
+      "metadata": {
+        "role": "Patient, determined friend",
+        "continuity": "Keep skin green and shell brown in every scene",
+        "reference_pose": "Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground",
+        "reference_subject": "Exactly one green tortoise, full-body three-quarter side view, entire body visible. Large rounded brown back shell clearly visible, defined hexagonal scutes confined to that shell",
+        "reference_negative_prompt": "green shell, repeated tortoises, mosaic, flat illustration, clothing",
+        "reference_spec_revision": "single_reference_v3"
+      },
+      "prompt": "Exactly one green tortoise, full-body three-quarter side view, entire body visible. Large rounded brown back shell clearly visible, defined hexagonal scutes confined to that shell. Friendly high-quality 3D cartoon render, soft studio lighting, plain neutral gray background.",
+      "negative_prompt": "duplicate animals, multiple animals, multiple views, tiled composition, wallpaper, repeating motifs, split panels, character sheet, collage, cropped body, pedestal, text, watermark, green shell, repeated tortoises, mosaic, flat illustration, clothing",
+      "reference_spec_revision": "single_reference_v3"
+    }
+  ],
+  "scenes": [],
+  "locked_scene_ids": [],
+  "prompt_revision": "single_scene_v2",
+  "negative_prompt": "split panels, colored panels, collage, triptych, character sheet, lineup, multiple views, extra characters, duplicate animals, turquoise rabbit, text, watermark, pedestal",
+  "generation_config": {
+    "prompt_revision": "single_scene_v2",
+    "conditioning": "ip_adapter_masked_references_v2",
+    "reference_size": 1024,
+    "base_seed": 20261124
+  },
+  "reference_prompt_revision": "single_reference_v3",
+  "generation_policy": {
+    "reference_only": true,
+    "required_reference_ids": [
+      "hare",
+      "tortoise"
+    ],
+    "allowed_scene_ids": [],
+    "full_batch_enabled": false,
+    "fresh_references": true,
+    "reference_spec_revision": "single_reference_v3",
+    "reference_attempt": 1
+  },
+  "quality_review": {
+    "previous_references": "v2_failed_human_visual_review",
+    "approved": false
+  }
+}

@@ -145,6 +145,25 @@ def validate_result(manifest_path, expected_request_hash=None):
         if not isinstance(data.get("jobs"), dict):
             raise ValueError("Worker result requires jobs object")
         expected_completion = {"completed_scene_ids": [s for s in scenes if s in completed], "missing_scene_ids": missing, "failed_scene_ids": failed}
+        reference_only = request.get("generation_policy", {}).get("reference_only")
+        if reference_only:
+            completed_refs = [c for c in characters if ("character", c) in seen]
+            missing_refs = [c for c in characters if c not in completed_refs]
+            failed_refs = [c for c in characters if data["jobs"].get(f"character:{c}", {}).get("status") == "failed"]
+            expected_completion.update(completed_reference_ids=completed_refs,
+                missing_reference_ids=missing_refs, failed_reference_ids=failed_refs)
+            if data.get("requested_reference_ids") != list(characters):
+                raise ValueError("Requested reference IDs differ from the reference-only request")
+            for row in data["assets"]:
+                identity, metadata = row["target_id"], row["metadata"]
+                if (data["jobs"].get(f"character:{identity}", {}).get("status") not in ("completed", "reused") or
+                        metadata.get("reference_spec_revision") != characters[identity].get("reference_spec_revision") or
+                        metadata.get("conditioning") != "text_only"):
+                    raise ValueError("Reference-only result lacks a valid job/specification/text-only record")
+                if not metadata.get("reused_reference") and metadata["seed"] != scene_seed(identity, data["settings"]["base_seed"]):
+                    raise ValueError("Reference seed does not match the deterministic batch seed")
+            if data.get("status") == "complete" and (missing_refs or failed_refs):
+                raise ValueError("Batch claims complete while required references are missing/failed")
         if data.get("completion") != expected_completion:
             raise ValueError("Result completion summary does not match its actual images/jobs")
         for target in completed:
@@ -152,10 +171,14 @@ def validate_result(manifest_path, expected_request_hash=None):
                 raise ValueError("Scene image has no completed job record")
     if data.get("status") == "complete" and (missing or failed):
         raise ValueError("Batch claims complete while requested scenes are missing/failed")
-    return {"manifest_path": str(path), "manifest_sha256": file_hash(path), "request_sha256": actual_request_hash,
+    result = {"manifest_path": str(path), "manifest_sha256": file_hash(path), "request_sha256": actual_request_hash,
         "status": data.get("status"), "asset_count": len(data["assets"]), "completed_scene_ids": completed,
         "missing_scene_ids": missing, "failed_scene_ids": failed, "errors": data.get("errors", []),
         "all_checksums_match": True, "all_images_decode": True}
+    if request.get("generation_policy", {}).get("reference_only"):
+        result.update({key: data["completion"][key] for key in
+                       ("completed_reference_ids", "missing_reference_ids", "failed_reference_ids")})
+    return result
 
 
 def prepare_existing_production(production_dir, destination):

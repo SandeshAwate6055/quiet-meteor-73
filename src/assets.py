@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 from .asset_store import AssetStore, digest, read_image
 from .characters import (load_bible, safe_relative, scene_prompt, reference_prompt,
-                         PROMPT_REVISION, REFERENCE_SPEC_REVISION, SCENE_NEGATIVE_PROMPT, REFERENCE_NEGATIVE_PROMPT)
+                         PROMPT_REVISION, REFERENCE_SPEC_REVISION, SCENE_NEGATIVE_PROMPT, reference_negative_prompt)
 from .schema import load_story
 from .visuals import font
 from .image_conditioning import CONDITIONING_REVISION
@@ -90,7 +90,7 @@ def export_request(store, story, bible, destination, selected=None):
     for character in bible.characters.values():
         row = {"id": character.id, "name": character.name, "appearance": character.appearance,
                "reference_image_paths": list(character.reference_image_paths), "metadata": character.metadata,
-               "prompt": reference_prompt(character, bible), "negative_prompt": REFERENCE_NEGATIVE_PROMPT,
+               "prompt": reference_prompt(character, bible), "negative_prompt": reference_negative_prompt(character),
                "reference_spec_revision": REFERENCE_SPEC_REVISION}
         approved = store.approved("character", character.id)
         if approved:

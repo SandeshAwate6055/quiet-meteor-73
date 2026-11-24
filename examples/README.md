@@ -1,8 +1,18 @@
-# Revised challenge smoke (v2)
+# Current handoff: character references v3 only
+
+Use [character_references_v3.zip](character_references_v3.zip) and [its readable request](character_references_v3.json) with the updated batch notebook. [Exact Colab steps, reference settings, diagnosis and single-character retry commands](../notebooks/REFERENCE_V3.md).
+
+This small reproducible package has two character specifications, **zero scenes**, an empty reference index and checksummed worker source. No historical candidates, generated images, credentials, models or local machine settings are included. Both v2 references failed visual review and remain unapproved; all old files are preserved. V3 is locally tested but **not GPU-executed**. The current task stops after reference review, without challenge generation.
+
+Reproduce from this exact code checkout with `.\.venv\Scripts\python.exe -m scripts.prepare_reference_v3`. The builder refuses to overwrite different existing files. Use `--characters tortoise --attempt 2 --name tortoise_reference_v3_retry2 --output-dir outputs/reference_retry_v3` to prepare a new one-reference retry without scheduling hare. Use the printed new base seed and a fresh result identity.
+
+Everything below describes historical packages; their scene-generation steps are superseded by the v3 reference-only quality gate. Do not run them for this task.
+
+## Historical challenge request (v2): superseded
 
 Use `challenge_smoke_v2.zip` with the updated batch notebook. `challenge_smoke_v2.json` is its readable request. The original `colab_handoff.zip` and its historical references are retained unchanged.
 
-Regenerate the identical v2 package from the current code without loading a model:
+The v2 ZIP below is retained byte-for-byte as history. The old builder command is shown for context; current code produces different content and refuses to overwrite that historical package. Use the v3 builder instead:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.prepare_challenge_smoke

@@ -64,6 +64,15 @@ def validate_request(request):
     allowed = request.get("generation_policy", {}).get("allowed_scene_ids")
     if allowed is not None and (not isinstance(allowed, list) or set(scenes) - set(allowed)):
         raise ValueError("Request scenes exceed the explicit smoke-only scope")
+    policy = request.get("generation_policy", {})
+    for key in ("reference_only", "fresh_references"):
+        if key in policy and not isinstance(policy[key], bool):
+            raise ValueError(f"{key} must be a boolean")
+    if policy.get("reference_only"):
+        if scenes or not characters or policy.get("allowed_scene_ids") != [] or policy.get("full_batch_enabled") is not False:
+            raise ValueError("Reference-only requests require characters, zero scenes and disabled scene generation")
+        if policy.get("required_reference_ids") != list(characters):
+            raise ValueError("Reference-only required_reference_ids must match its character rows")
     return characters, scenes
 
 
@@ -75,6 +84,7 @@ class BatchSettings:
     adapter_scale: float = .35
     conditioning: str = CONDITIONING_REVISION
     prompt_revision: str = PROMPT_REVISION
+    reference_size: int = 768  # Preserve existing scene workflows; v3 requests explicitly use 1024.
 
     def validate(self):
         if self.conditioning != CONDITIONING_REVISION or self.prompt_revision != PROMPT_REVISION:
@@ -87,9 +97,11 @@ class BatchSettings:
             raise ValueError("Invalid inference steps")
         if isinstance(self.adapter_scale, bool) or not isinstance(self.adapter_scale, (int, float)) or not 0 < self.adapter_scale <= 1:
             raise ValueError("Reference conditioning must remain enabled with 0 < adapter_scale <= 1")
+        if isinstance(self.reference_size, bool) or not isinstance(self.reference_size, int) or self.reference_size not in (512, 768, 1024):
+            raise ValueError("reference_size must be 512, 768 or 1024")
 
     def size(self, kind):
-        return ((768, 768) if kind == "character" else (1024, 576)) if self.family == "sdxl" else ((512, 512) if kind == "character" else (768, 432))
+        return ((self.reference_size, self.reference_size) if kind == "character" else (1024, 576)) if self.family == "sdxl" else ((512, 512) if kind == "character" else (768, 432))
 
 
 def generation_identity(request_hash, settings):
@@ -133,7 +145,7 @@ class BatchWorker:
         self.settings.validate()
         requested_config = self.request.get("generation_config", {})
         if any(requested_config.get(key, getattr(self.settings, key)) != getattr(self.settings, key)
-               for key in ("conditioning", "prompt_revision")):
+               for key in ("conditioning", "prompt_revision", "reference_size", "base_seed")):
             raise ValueError("Request prompting/conditioning configuration is incompatible with this worker; prepare a NEW request/batch")
         self.generation_identity = generation_identity(self.request_hash, self.settings)
         self.references = list(references or [])
@@ -143,10 +155,15 @@ class BatchWorker:
             "jobs": {}, "errors": [], "runs": [], "created_at": now(), "request_sha256": self.request_hash,
             "settings": asdict(self.settings), "generation_identity": self.generation_identity,
             "requested_scene_ids": list(self.scenes)}
+        if self.request.get("generation_policy", {}).get("reference_only"):
+            self.data["requested_reference_ids"] = list(self.characters)
         if self.data.get("worker_version") != WORKER_VERSION or self.data.get("generation_identity") != self.generation_identity:
             raise ValueError("Resume request/settings differ or generation implementation changed. Use a NEW result directory; existing images will not be overwritten.")
         for identity in self.scenes:
             self.data["jobs"].setdefault(f"scene:{identity}", {"status": "pending", "seed": scene_seed(identity, self.settings.base_seed)})
+        if self.request.get("generation_policy", {}).get("reference_only"):
+            for identity in self.characters:
+                self.data["jobs"].setdefault(f"character:{identity}", {"status": "pending", "seed": scene_seed(identity, self.settings.base_seed)})
 
     def refresh(self):
         if self.manifest_path.exists():
@@ -211,6 +228,8 @@ class BatchWorker:
         selected = [] if mode == "references" else [smoke_scene] if mode == "smoke" and smoke_scene else list(self.scenes)
         blockers, warnings, new, reused, chosen = [], [], [], [], {}
         policy = self.request.get("generation_policy", {})
+        if policy.get("reference_only") and mode not in ("dry_run", "references"):
+            blockers.append("Reference-only request: scene generation is disabled; use MODE='references' or 'dry_run'")
         if mode == "full" and policy.get("full_batch_enabled") is False:
             blockers.append("This request is restricted to the challenge smoke. Full-batch generation is disabled pending human quality review.")
         if mode == "smoke" and policy.get("require_reference_review") and not references_reviewed:
@@ -221,13 +240,21 @@ class BatchWorker:
         for identity in selected:
             reference_layout(self.scenes[identity]["characters"])  # Validate strategy limits before model loading.
         sources = self._sources()
+        if policy.get("fresh_references"):
+            # Fresh requests never inherit rejected external candidates. Only
+            # this exact request/settings/code batch's successful work resumes.
+            own = {c: self._asset("character", c) for c in self.characters}
+            sources = [r for r in sources if own.get(r["target_id"]) and
+                       r["sha256"] == own[r["target_id"]]["sha256"]]
+            if self.references:
+                warnings.append("Fresh-reference request: external references are preserved but not reused")
         required_spec = policy.get("reference_spec_revision")
         if required_spec:
             historical = [r for r in sources if r.get("metadata", {}).get("reference_spec_revision") != required_spec]
             if historical:
                 warnings.append("Historical reference candidates are preserved but excluded: they do not meet this request's single-view specification revision")
             sources = [r for r in sources if r not in historical]
-        needed = sorted({c for s in self.scenes.values() for c in s["characters"]})
+        needed = sorted(self.characters) if policy.get("reference_only") else sorted({c for s in self.scenes.values() for c in s["characters"]})
         reference_ids = reference_ids or {}
         for identity in needed:
             options = [r for r in sources if r["target_id"] == identity]
@@ -248,14 +275,14 @@ class BatchWorker:
                 chosen[identity] = row
                 reused.append({"kind": "character", "id": identity, "sha256": row["sha256"], "approval": row["approval"]})
                 if row["approval"] != "approved":
-                    warnings.append(f"EXPERIMENTAL PREVIEW: {identity} is UNAPPROVED; generated scenes will remain candidates")
-                    if not allow_unapproved_references and mode != "references":
+                    warnings.append(f"EXPERIMENTAL PREVIEW: {identity} is UNAPPROVED; reuse does not approve it")
+                    if not allow_unapproved_references and mode != "references" and not policy.get("reference_only"):
                         blockers.append(f"Unapproved reference {identity} requires explicit preview opt-in; it will not be regenerated automatically")
             elif unique:
                 blockers.append(f"Multiple references for {identity}; choose its exact reference ID/checksum")
             elif not choice:
                 new.append({"kind": "character", "id": identity})
-                if not allow_unapproved_references and mode != "references":
+                if not allow_unapproved_references and mode != "references" and not policy.get("reference_only"):
                     blockers.append(f"New reference {identity} would be unapproved; enable experimental preview or supply approved references")
         for record in self.data["assets"]:
             if record["kind"] == "scene":
@@ -276,6 +303,7 @@ class BatchWorker:
             if not smoke or not self.data.get("smoke_scene_id") or not quality_reviewed:
                 blockers.append("Run one successful smoke scene first, inspect it, then explicitly set QUALITY_REVIEWED=True")
         return {"request_sha256": self.request_hash, "mode": mode, "requested_scene_ids": list(self.scenes),
+            "required_reference_ids": needed,
             "generation_identity": self.generation_identity,
             "selected_scene_ids": selected, "smoke_scene_id": smoke_scene, "new_images": new,
             "new_image_count": len(new), "reused_images": reused, "warnings": warnings,
@@ -286,6 +314,13 @@ class BatchWorker:
         failed = [s for s in self.scenes if self.data["jobs"].get(f"scene:{s}", {}).get("status") == "failed"]
         missing = [s for s in self.scenes if s not in completed]
         self.data["completion"] = {"completed_scene_ids": completed, "missing_scene_ids": missing, "failed_scene_ids": failed}
+        if self.request.get("generation_policy", {}).get("reference_only"):
+            references = [c for c in self.characters if self._asset("character", c)]
+            missing_refs = [c for c in self.characters if c not in references]
+            failed_refs = [c for c in self.characters if self.data["jobs"].get(f"character:{c}", {}).get("status") == "failed"]
+            self.data["completion"].update(completed_reference_ids=references,
+                missing_reference_ids=missing_refs, failed_reference_ids=failed_refs)
+            return not missing_refs and not failed_refs
         return not missing and not failed
 
     def _register_reference(self, identity, source):
@@ -412,7 +447,7 @@ class BatchWorker:
                 self.data["status"] = "complete"
             elif self.data["status"] == "running":
                 self.data["status"] = "references_ready" if plan["mode"] == "references" else "awaiting_smoke_review" if plan["mode"] == "smoke" else "partial"
-            if controls.get("quality_reviewed"):
+            if controls.get("quality_reviewed") and self.scenes:
                 smoke = self._asset("scene", self.data.get("smoke_scene_id"))
                 self.data["smoke_quality_review"] = {"at": now(), "explicit_user_confirmation": True,
                     "sha256": smoke["sha256"] if smoke else None, "asset_approval": False}

@@ -2,21 +2,36 @@
   "version": 1,
   "style": "Friendly high-quality 3D cartoon",
   "environment": "Colorful sunny forest",
-  "metadata": {"project": "AI Kids Story Studio", "story": "Tiny Steps, Big Finish"},
+  "metadata": {
+    "project": "AI Kids Story Studio", "story": "Tiny Steps, Big Finish",
+    "reference_style": "Friendly high-quality 3D cartoon render, soft studio lighting, plain neutral gray background"
+  },
   "characters": [
     {
       "id": "hare",
       "name": "Rabbit",
       "appearance": "white fur, pink inner ears, blue vest",
       "reference_image_paths": ["assets/references/hare.png"],
-      "metadata": {"role": "Fast, overconfident but kind friend", "continuity": "Keep fur white and vest blue in every scene", "reference_pose": "Single full-body three-quarter view, paws on plain ground, one view only", "reference_spec_revision": "single_view_v2"}
+      "metadata": {
+        "role": "Fast, overconfident but kind friend", "continuity": "Keep fur white and vest blue in every scene",
+        "reference_pose": "Single full-body three-quarter view, paws on plain ground, one view only",
+        "reference_subject": "Exactly one white rabbit wearing only a royal blue sleeveless vest. Pink inner ears, small pink nose; full-body three-quarter view, centered, entire body visible",
+        "reference_negative_prompt": "pink vest, red vest, bow tie, necktie, shirt, trousers, hat, accessories",
+        "reference_spec_revision": "single_reference_v3"
+      }
     },
     {
       "id": "tortoise",
       "name": "Tortoise",
       "appearance": "green skin, visible rounded brown patterned shell",
       "reference_image_paths": ["assets/references/tortoise.png"],
-      "metadata": {"role": "Patient, determined friend", "continuity": "Keep skin green and shell brown in every scene", "reference_pose": "Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground", "reference_spec_revision": "single_view_v2"}
+      "metadata": {
+        "role": "Patient, determined friend", "continuity": "Keep skin green and shell brown in every scene",
+        "reference_pose": "Single full-body three-quarter side view, back shell clearly visible, four short legs on plain ground",
+        "reference_subject": "Exactly one green tortoise, full-body three-quarter side view, entire body visible. Large rounded brown back shell clearly visible, defined hexagonal scutes confined to that shell",
+        "reference_negative_prompt": "green shell, repeated tortoises, mosaic, flat illustration, clothing",
+        "reference_spec_revision": "single_reference_v3"
+      }
     }
   ]
 }
